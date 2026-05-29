@@ -2392,18 +2392,8 @@ function ChatWorkspace(props: {
                     </div>
 
                     <details className="rounded-md border bg-white p-3">
-                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Advanced settings</summary>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        <FieldSelect
-                          label="Output"
-                          value={props.form.generation_mode}
-                          onChange={(value) => props.update("generation_mode", value as CampaignForm["generation_mode"])}
-                          options={[
-                            { value: "both", label: "Video + statiky" },
-                            { value: "video", label: "Jen video" },
-                            { value: "static", label: "Jen statiky" },
-                          ]}
-                        />
+                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Advanced routing</summary>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
                         {settingRows.map((row) => (
                           <FieldSelect
                             key={row.key}
@@ -2413,21 +2403,6 @@ function ChatWorkspace(props: {
                             options={row.options}
                           />
                         ))}
-                        <FieldNumberInput
-                          label="UGC delka"
-                          value={props.form.video_length}
-                          onChange={(value) => props.update("video_length", value)}
-                          min={5}
-                          max={60}
-                          suffix="s"
-                        />
-                        <FieldNumberInput
-                          label="Statiky"
-                          value={props.form.max_static_images}
-                          onChange={(value) => props.update("max_static_images", value)}
-                          min={1}
-                          max={20}
-                        />
                       </div>
                       <div className="mt-3">
                         <AvatarConsentCard
