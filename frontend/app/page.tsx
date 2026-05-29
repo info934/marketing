@@ -155,13 +155,11 @@ type GeneratedChatAsset = {
   name: string;
   meta?: string;
 };
-type AgentBrainNode = {
-  id: string;
+type AgentBrainProfile = {
   name: string;
   role: string;
   color: string;
   palette: [string, string, string];
-  icon: ReactNode;
 };
 
 const defaultChatGptPromptModel = "openai/gpt-5.4-mini";
@@ -268,48 +266,12 @@ const promptModelOptions = [
   { value: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
 ] as const;
 
-const agentBrainNodes: AgentBrainNode[] = [
-  {
-    id: "orchestrator",
-    name: "Orchestrator",
-    role: "Ridici mozek",
-    color: "#e8c66a",
-    palette: ["#e8c66a", "#b8942f", "#fff0c0"],
-    icon: <Bot className="h-3.5 w-3.5" />,
-  },
-  {
-    id: "strategy",
-    name: "Strategist",
-    role: "Angle & offer",
-    color: "#27c08a",
-    palette: ["#27c08a", "#7affc0", "#1a9e6e"],
-    icon: <Wand2 className="h-3.5 w-3.5" />,
-  },
-  {
-    id: "ugc",
-    name: "UGC Director",
-    role: "Video scenare",
-    color: "#46e6ff",
-    palette: ["#46e6ff", "#9bf0ff", "#2fd0ff"],
-    icon: <Video className="h-3.5 w-3.5" />,
-  },
-  {
-    id: "static",
-    name: "Static Art",
-    role: "Ad visuals",
-    color: "#c46bff",
-    palette: ["#c46bff", "#e6a8ff", "#9a4bff"],
-    icon: <Images className="h-3.5 w-3.5" />,
-  },
-  {
-    id: "qa",
-    name: "QA Guard",
-    role: "Fidelity gate",
-    color: "#ff9f45",
-    palette: ["#ff9f45", "#ffd089", "#ff7a1a"],
-    icon: <ShieldCheck className="h-3.5 w-3.5" />,
-  },
-];
+const orchestratorBrain: AgentBrainProfile = {
+  name: "Orchestrator",
+  role: "User-facing creative brain",
+  color: "#23c7a9",
+  palette: ["#23c7a9", "#9ee7d8", "#e8c66a"],
+};
 
 const videoModelOptions = [
   { value: "bytedance/seedance-2.0-fast", label: "Seedance 2.0 Fast" },
@@ -1940,10 +1902,9 @@ function AgentSignal(props: { icon: ReactNode; label: string; value: string }) {
 
 function AgentVoiceVisualizer(props: { busy: boolean; status?: string; compact?: boolean }) {
   const [mode, setMode] = useState<AgentVoiceMode>("idle");
-  const [activeAgentId, setActiveAgentId] = useState(agentBrainNodes[0].id);
   const effectiveMode = props.busy ? "speaking" : mode;
   const active = effectiveMode !== "idle";
-  const activeAgent = agentBrainNodes.find((agent) => agent.id === activeAgentId) || agentBrainNodes[0];
+  const activeAgent = orchestratorBrain;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -2060,15 +2021,16 @@ function AgentVoiceVisualizer(props: { busy: boolean; status?: string; compact?:
   }, [activeAgent, effectiveMode]);
 
   return (
-    <Card className="overflow-hidden border-[#e8c66a]/20 bg-[#05080a] text-white shadow-sm">
-      <CardContent className={cn("relative p-0", props.compact ? "min-h-[250px]" : "min-h-[360px]")}>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_26%,rgba(39,192,138,0.18),rgba(5,8,10,0.94)_58%)]" />
-        <div className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:36px_36px]" />
+    <Card className="overflow-hidden border-[#23c7a9]/18 bg-[#101820] text-white shadow-sm">
+      <CardContent className={cn("relative p-0", props.compact ? "min-h-[250px]" : "min-h-[340px]")}>
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_24%,rgba(35,199,169,0.20),rgba(16,24,32,0.96)_60%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.06),transparent_42%,rgba(35,199,169,0.07))]" />
+        <div className="absolute inset-0 opacity-[0.055] [background-image:linear-gradient(rgba(255,255,255,.10)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.10)_1px,transparent_1px)] [background-size:36px_36px]" />
 
         <div className="relative grid h-full gap-3 p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[#f4ead0]">Agent brain</p>
+              <p className="truncate text-sm font-semibold text-[#dffbf5]">Orchestrator brain</p>
               <p className="mt-1 truncate text-[11px] uppercase tracking-[0.18em] text-white/45">{props.status || voiceModeLabel(effectiveMode)}</p>
             </div>
             <button
@@ -2076,7 +2038,7 @@ function AgentVoiceVisualizer(props: { busy: boolean; status?: string; compact?:
               onClick={() => setMode(effectiveMode === "listening" ? "idle" : "listening")}
               className={cn(
                 "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition",
-                active ? "border-[#e8c66a]/70 bg-[#e8c66a] text-[#05080a] shadow-[0_0_28px_rgba(232,198,106,0.55)]" : "border-[#e8c66a]/20 bg-white/5 text-[#e8c66a]",
+                active ? "border-[#23c7a9]/80 bg-[#23c7a9] text-[#06211e] shadow-[0_0_28px_rgba(35,199,169,0.48)]" : "border-[#23c7a9]/25 bg-white/5 text-[#9ee7d8]",
               )}
               title="Voice mode"
             >
@@ -2088,41 +2050,25 @@ function AgentVoiceVisualizer(props: { busy: boolean; status?: string; compact?:
             <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />
             <div className="pointer-events-none relative rounded-full bg-[#05080a]/20 px-4 py-3 text-center shadow-[0_0_32px_rgba(5,8,10,0.35)] backdrop-blur-[1px]">
               <p className="text-base font-semibold tracking-normal text-white drop-shadow-[0_1px_8px_rgba(0,0,0,0.75)]">{activeAgent.name}</p>
-              <p className="mt-1 text-[10px] uppercase tracking-[0.28em] text-white/70 drop-shadow-[0_1px_6px_rgba(0,0,0,0.85)]">{activeAgent.role}</p>
+              <p className="mt-1 text-[10px] uppercase tracking-[0.22em] text-[#9ee7d8] drop-shadow-[0_1px_6px_rgba(0,0,0,0.85)]">
+                {activeAgent.role}
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-5 gap-1.5">
-            {agentBrainNodes.map((agent) => {
-              const selected = agent.id === activeAgent.id;
-              return (
-                <button
-                  key={agent.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveAgentId(agent.id);
-                    setMode("speaking");
-                  }}
-                  className={cn(
-                    "group flex min-w-0 flex-col items-center gap-1 rounded-md border px-1.5 py-2 transition",
-                    selected ? "bg-white/[0.06] text-white" : "border-transparent text-white/50 hover:border-white/10 hover:bg-white/[0.04] hover:text-white/80",
-                  )}
-                  style={{ borderColor: selected ? `${agent.color}88` : undefined }}
-                  title={`${agent.name} - ${agent.role}`}
-                >
-                  <span
-                    className={cn("flex h-8 w-8 items-center justify-center rounded-full transition", selected && "scale-105")}
-                    style={{
-                      background: `radial-gradient(circle at 35% 30%, rgba(255,255,255,.75), ${agent.color} 48%, rgba(0,0,0,.4) 100%)`,
-                      boxShadow: selected ? `0 0 22px ${agent.color}88` : `0 0 12px ${agent.color}44`,
-                    }}
-                  >
-                    {agent.icon}
-                  </span>
-                  <span className="w-full truncate text-[10px] font-semibold">{agent.name}</span>
-                </button>
-              );
-            })}
+          <div className="grid grid-cols-3 gap-1.5 rounded-md border border-white/10 bg-white/[0.035] p-2 text-[11px] text-white/68">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-[#23c7a9]" />
+              <span className="truncate">Dialog</span>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <GitBranch className="h-3.5 w-3.5 shrink-0 text-[#23c7a9]" />
+              <span className="truncate">Route</span>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-[#23c7a9]" />
+              <span className="truncate">Gate</span>
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-1.5">
@@ -2136,7 +2082,11 @@ function AgentVoiceVisualizer(props: { busy: boolean; status?: string; compact?:
                 type="button"
                 size="sm"
                 variant={effectiveMode === value ? "secondary" : "ghost"}
-                className={cn("h-8 text-xs", effectiveMode !== value && "text-white/65 hover:bg-white/10 hover:text-white")}
+                className={cn(
+                  "h-8 text-xs",
+                  effectiveMode === value && "bg-[#dffbf5] text-[#101820] hover:bg-[#dffbf5]",
+                  effectiveMode !== value && "text-white/65 hover:bg-white/10 hover:text-white",
+                )}
                 onClick={() => setMode(value as AgentVoiceMode)}
               >
                 {label}
