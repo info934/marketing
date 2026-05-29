@@ -26,6 +26,7 @@ def _configure_tmp_dirs(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "OUTPUT_DIR", output_dir)
     monkeypatch.setattr(performance_memory, "MEMORY_PATH", tmp_path / "performance_memory.json")
     monkeypatch.setattr(config, "CREATIVE_MEMORY_DB_PATH", tmp_path / "creative_memory.sqlite")
+    monkeypatch.setattr(config, "COMPANY_DATA_PATH", tmp_path / "companies.json")
     return upload_dir, output_dir
 
 
@@ -94,6 +95,92 @@ def test_avatar_upload_uses_public_url_as_generation_reference(monkeypatch, tmp_
     assert avatar["image_url"] == "https://example.com/avatar.png"
     assert avatar["preview_url"] == "https://example.com/avatar.png"
     assert avatar["local_image_only"] is False
+
+
+def test_company_library_saves_brand_ads_context(monkeypatch, tmp_path):
+    _configure_tmp_dirs(monkeypatch, tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/companies",
+        json={
+            "id": "solar-leads",
+            "name": "Solar Leads",
+            "ad_vertical": "solar_fve",
+            "business_model": "lead_generation",
+            "market": "CZ",
+            "language": "cs",
+            "default_platform": "meta",
+            "creative_channels": ["meta", "instagram"],
+            "audience": "Majitele domu, kteri resi drahou elektrinu.",
+            "positioning": "Duveryhodna edukace a poptavkovy lead-gen.",
+            "brand_voice": "vecny, konkretni, bez nadsazenych slibu",
+            "proof_points": ["ucet za elektrinu", "strecha domu", "konzultace"],
+            "forbidden_claims": ["garantovana uspora", "dotace pro kazdeho"],
+            "creative_quality_rules": ["silny prvni vizual", "kazdy angle musi byt jiny"],
+            "is_default": True,
+        },
+    )
+
+    assert response.status_code == 200
+    company = response.json()["company"]
+    assert company["id"] == "solar-leads"
+    assert company["ad_vertical"] == "solar_fve"
+    assert "Brand/client: Solar Leads" in company["context_text"]
+
+    library = client.get("/companies").json()
+    saved = next(item for item in library["companies"] if item["id"] == "solar-leads")
+    assert library["default_company_id"] == "solar-leads"
+    assert saved["creative_quality_rules"] == ["silny prvni vizual", "kazdy angle musi byt jiny"]
+    assert saved["product_categories"] == []
+
+
+def test_generate_applies_brand_context_to_ads_creatives(monkeypatch, tmp_path):
+    _configure_tmp_dirs(monkeypatch, tmp_path)
+    monkeypatch.setattr(config, "OPENROUTER_API_KEY", "")
+    client = TestClient(app)
+    client.post(
+        "/companies",
+        json={
+            "id": "kimlondon-test",
+            "name": "Kimlondon Test",
+            "ad_vertical": "fashion_ecommerce",
+            "business_model": "dropshipping",
+            "market": "UK",
+            "language": "en",
+            "default_platform": "meta",
+            "audience": "UK fashion shoppers who need believable proof before clicking.",
+            "positioning": "Real creator proof for bags, clothing, and shoes.",
+            "brand_voice": "British English, practical, direct, low-hype",
+            "proof_points": ["worn context", "carried scale", "detail proof"],
+            "creative_quality_rules": ["make every static angle visibly different"],
+        },
+    )
+
+    response = client.post(
+        "/generate",
+        files=_image_file(),
+        data={
+            "company_id": "kimlondon-test",
+            "product_name": "The Roomiest Bum Bag",
+            "product_info": "Black everyday bum bag for errands and travel. Show carried scale and zipper detail.",
+            "product_reference_url": "https://example.com/bum-bag.jpg",
+            "platform": "tiktok",
+            "language": "en",
+            "generation_mode": "static",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user_input"]["company_profile"]["company_name"] == "Kimlondon Test"
+    assert payload["user_input"]["ad_vertical"] == "fashion_ecommerce"
+    assert payload["product_analysis"]["brand_context"]
+    assert payload["content_prompt_package"]["brand_ads_context"]["company_name"] == "Kimlondon Test"
+    assert "Brand ads context" in payload["content_prompt_package"]["seedance_video_prompt"]
+    first_static = payload["ads_creative_set"]["static_image_ads"][0]
+    assert "brand_ads_context_applied" in first_static
+    assert "Kimlondon Test" in first_static["visual_prompt"]
 
 
 def test_finance_scene_preview_uses_avatar_reference_for_scene_image(monkeypatch, tmp_path):

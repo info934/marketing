@@ -49,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   cancelGenerationRun,
   getAvatars,
+  getCompanies,
   getCreativeIntelligence,
   getCreatives,
   getGenerationRuns,
@@ -57,8 +58,10 @@ import {
   getPromptSettings,
   getProviderCapabilities,
   makeDefaultAvatar,
+  makeDefaultCompany,
   parseChatBrief,
   saveAvatar,
+  saveCompany,
   saveCreativePerformance,
   saveCreativeRating,
   startGeneration,
@@ -68,6 +71,7 @@ import type {
   Avatar,
   CampaignForm,
   ChatItem,
+  Company,
   Creative,
   IntelligenceSummary,
   LearningSnapshot,
@@ -78,7 +82,7 @@ import { appendBlock, cn, directImageUrlsFromText, urlsFromText } from "@/lib/ut
 
 type ApplyRole = "product" | "competitor" | "avatar" | "direction";
 type SettingKey = "platform" | "market" | "language";
-type AppView = "chat" | "dashboard" | "avatars" | "creatives" | "prompt-lab" | "analytics" | "costs" | "settings";
+type AppView = "chat" | "dashboard" | "brands" | "avatars" | "creatives" | "prompt-lab" | "analytics" | "costs" | "settings";
 type CreativeRatingStatus = "approved" | "rejected";
 type CreativeRatingFeedback = {
   comment?: string;
@@ -152,6 +156,9 @@ const previousGeminiScenarioModel = "google/gemini-3.5-flash";
 
 const defaultForm: CampaignForm = {
   app_mode: "ecommerce",
+  company_id: "kimlondon",
+  ad_vertical: "fashion_ecommerce",
+  brand_context: "",
   product_name: "",
   product_info: "",
   product_category: "auto",
@@ -313,11 +320,11 @@ const workflowNodeBlueprints: Array<Omit<WorkflowNode, "inventory">> = [
   },
   {
     id: "product_intake",
-    title: "Product Intake Agent",
+    title: "Ad Subject Intake Agent",
     stage: "Understanding",
     kind: "agent",
     icon: Boxes,
-    summary: "Extracts verified product facts and safe ecommerce benefits.",
+    summary: "Extracts verified product/service facts and safe ad benefits.",
     dependsOn: ["chat_brief_parser"],
     outputs: ["known_product_facts", "safe_benefits"],
     fields: ["product_name", "product_info", "product_category", "product_reference_url"],
@@ -632,6 +639,12 @@ const navItems = [
     icon: LayoutDashboard,
   },
   {
+    id: "brands",
+    label: "Brands",
+    description: "Brand a ads kontext",
+    icon: BriefcaseBusiness,
+  },
+  {
     id: "avatars",
     label: "Avatar set",
     description: "Nastaveni creatoru",
@@ -676,12 +689,16 @@ const navItems = [
 
 const viewCopy: Record<AppView, { title: string; subtitle: string }> = {
   chat: {
-    title: "Ecommerce creative chat",
-    subtitle: "Zadani kampane pres chat, generovani pres workflow backend",
+    title: "Ads creative chat",
+    subtitle: "Brief kampane, kreativni koncepty a generovani reklam",
   },
   dashboard: {
     title: "Dashboard",
     subtitle: "Prehled runu, learning loopu a dalsich kroku",
+  },
+  brands: {
+    title: "Brand context",
+    subtitle: "Ulozene firmy, trhy, brand voice a pravidla pro tvorbu ads",
   },
   avatars: {
     title: "Avatar set",
@@ -714,7 +731,7 @@ function createIntroItem(): ChatItem {
     id: "intro",
     role: "assistant",
     text:
-      "Vloz produkt, URL, screenshot konkurence nebo avatar poznamky. Pak pouzij chipy Produkt / Konkurence / Avatar / Rezie, nebo nech AI parser slozit brief automaticky.",
+      "Vloz zadani reklamy, produkt/sluzbu, URL, screenshot konkurence nebo avatar poznamky. Portal z toho slozi brief a pripravi kreativy pro ads.",
     urls: [],
     files: [],
     applied_as: [],
@@ -737,6 +754,7 @@ function createAssistantItem(text: string): ChatItem {
 export default function CreativeOsApp() {
   const [view, setView] = useState<AppView>("chat");
   const [form, setForm] = useState<CampaignForm>(defaultForm);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [latestRun, setLatestRun] = useState<Record<string, unknown> | null>(null);
@@ -763,6 +781,7 @@ export default function CreativeOsApp() {
   const [parserResult, setParserResult] = useState<ParserResult | null>(null);
   const [runResult, setRunResult] = useState<Record<string, unknown> | null>(null);
   const [selectedCreativeId, setSelectedCreativeId] = useState("");
+  const [companyDraft, setCompanyDraft] = useState<Partial<Company>>({});
   const [avatarDraft, setAvatarDraft] = useState<Partial<Avatar>>({});
   const [avatarImageFile, setAvatarImageFile] = useState<File | null>(null);
   const [status, setStatus] = useState("Pripraveno");
@@ -819,8 +838,9 @@ export default function CreativeOsApp() {
   const refreshAll = useCallback(async () => {
     setDataBusy(true);
     setDataStatus("Synchronizuji workflow data...");
-    const [avatarResult, creativeResult, latestResult, runListResult, promptResult, intelligenceResult, learningResult, providerResult] =
+    const [companyResult, avatarResult, creativeResult, latestResult, runListResult, promptResult, intelligenceResult, learningResult, providerResult] =
       await Promise.allSettled([
+        getCompanies(),
         getAvatars(),
         getCreatives(120),
         getLatestRun(),
@@ -831,6 +851,15 @@ export default function CreativeOsApp() {
         getProviderCapabilities(),
       ]);
 
+    if (companyResult.status === "fulfilled") {
+      setCompanies(companyResult.value.companies || []);
+      const defaultCompanyId = companyResult.value.default_company_id;
+      const defaultCompany = (companyResult.value.companies || []).find((company) => company.id === defaultCompanyId) || (companyResult.value.companies || [])[0];
+      if (defaultCompany) {
+        setCompanyDraft((current) => (current.id ? current : defaultCompany));
+        setForm((current) => applyCompanyDefaults(current.company_id ? current : { ...current, company_id: defaultCompany.id }, defaultCompany));
+      }
+    }
     if (avatarResult.status === "fulfilled") {
       setAvatars(avatarResult.value.avatars || []);
       const defaultAvatarId = avatarResult.value.default_avatar_id;
@@ -850,7 +879,7 @@ export default function CreativeOsApp() {
     if (learningResult.status === "fulfilled") setLearning(learningResult.value);
     if (providerResult.status === "fulfilled") setProviderCapabilities(providerResult.value);
 
-    const failed = [avatarResult, creativeResult, latestResult, runListResult, promptResult, intelligenceResult, learningResult, providerResult].filter(
+    const failed = [companyResult, avatarResult, creativeResult, latestResult, runListResult, promptResult, intelligenceResult, learningResult, providerResult].filter(
       (item) => item.status === "rejected",
     ).length;
     setDataStatus(failed ? `Nacteno, ${failed} endpointu selhalo.` : "Data synchronizovana.");
@@ -911,6 +940,7 @@ export default function CreativeOsApp() {
     setStatus("Generovani dokonceno. Vysledky jsou v chatu.");
   }, [activeChatRunId, latestRun, chatCompletionAnnouncedId, chatProblemAnnouncedKey]);
 
+  const activeCompany = useMemo(() => companies.find((company) => company.id === form.company_id) || companies[0], [companies, form.company_id]);
   const activeAvatar = useMemo(() => avatars.find((avatar) => avatar.id === form.avatar_id) || avatars[0], [avatars, form.avatar_id]);
   const selectedCreative = useMemo(
     () =>
@@ -922,13 +952,22 @@ export default function CreativeOsApp() {
 
   const readiness = useMemo(
     () => [
-      ["Produkt", Boolean(form.product_info || form.product_reference_url || productFile || staticProductFiles.length)],
+      ["Brief", Boolean(form.product_info || form.product_reference_url || productFile || staticProductFiles.length)],
+      ["Brand", Boolean(form.company_id || form.brand_context)],
       ["Avatar", Boolean(form.avatar_id)],
       ["Konkurence", Boolean(form.competitor_strategy_enabled && (form.competitor_chat_brief || competitorFiles.length))],
       ["Plan", Boolean(form.generation_mode && form.prompt_model)],
     ],
     [form, productFile, staticProductFiles.length, competitorFiles.length],
   );
+
+  const companyOptions = useMemo(() => {
+    const loaded = companies.map((company) => ({
+      value: company.id,
+      label: company.name || company.id,
+    }));
+    return loaded.length ? loaded : [{ value: form.company_id, label: form.company_id || "No brand" }];
+  }, [companies, form.company_id]);
 
   const avatarOptions = useMemo(() => {
     const loaded = avatars.map((avatar) => ({
@@ -996,7 +1035,7 @@ export default function CreativeOsApp() {
         product_reference_url: directImageUrl || current.product_reference_url,
       }));
       applyProductFiles(item.files);
-      setStatus(directImageUrl || item.files[0] ? "Pouzito jako produktovy brief." : "Pouzito jako brief; URL neni direct image reference.");
+      setStatus(directImageUrl || item.files[0] ? "Pouzito jako ad brief." : "Pouzito jako brief; URL neni direct image reference.");
     }
 
     if (role === "competitor") {
@@ -1074,7 +1113,7 @@ export default function CreativeOsApp() {
 
   const createScenarioDrafts = () => {
     if (!form.product_info && !form.product_reference_url && !productFile) {
-      setStatus("Nejdriv dopln produktovy brief, URL nebo obrazek.");
+      setStatus("Nejdriv dopln ad brief, URL nebo obrazek.");
       selectView("chat");
       return;
     }
@@ -1107,12 +1146,12 @@ export default function CreativeOsApp() {
 
   const generate = async () => {
     if (!form.product_info && !form.product_reference_url && !productFile && staticProductFiles.length === 0) {
-      setStatus("Dopln produktovy brief, URL nebo obrazek.");
+      setStatus("Dopln ad brief, URL nebo obrazek.");
       selectView("chat");
       return;
     }
     if (form.generation_mode !== "static" && !isVideoReadyProductReference(form.product_reference_url)) {
-      setStatus("Pro video model dopln direct public image URL produktu (.jpg/.png/.webp/.avif). Lokalni upload pouzijeme jen pro statiky.");
+      setStatus("Pro video model dopln direct public visual URL (.jpg/.png/.webp/.avif). Lokalni upload pouzijeme jen pro statiky.");
       selectView("chat");
       return;
     }
@@ -1200,6 +1239,74 @@ export default function CreativeOsApp() {
     setForm((current) => resetCampaignDraftForNewChat(current));
     setStatus("Novy chat pripraveny pro dalsi generovani.");
     selectView("chat");
+  };
+
+  const selectCompany = (company: Company) => {
+    setForm((current) => applyCompanyDefaults({ ...current, company_id: company.id }, company));
+    setCompanyDraft(company);
+    setDataStatus(`Brand aktivni: ${company.name || company.id}`);
+  };
+
+  const editCompanyDraft = (company: Partial<Company>) => {
+    setCompanyDraft(company);
+    setDataStatus(`Editace brandu: ${company.name || company.id || "draft"}`);
+  };
+
+  const createCompanyDraft = () => {
+    const id = `brand_${Date.now().toString(36)}`;
+    setCompanyDraft({
+      id,
+      name: "New brand",
+      ad_vertical: "ads",
+      business_model: "",
+      market: form.market || "UK",
+      language: form.language || "en",
+      default_platform: form.platform || "meta",
+      creative_channels: ["meta", "instagram"],
+      product_categories: [],
+      brand_voice: "direct, practical, natural, performance-focused",
+      creative_quality_rules: ["distinct angle per creative", "clear proof moment", "no generic stock ad look"],
+    });
+    selectView("brands");
+    setDataStatus("Novy brand draft pripraven.");
+  };
+
+  const saveCompanyDraft = async () => {
+    if (!companyDraft.name && !companyDraft.id) {
+      setDataStatus("Dopln jmeno brandu.");
+      return;
+    }
+    const draftToSave = companyDraft.id
+      ? companyDraft
+      : {
+          ...companyDraft,
+          id: companyIdFromName(companyDraft.name || "brand"),
+        };
+    setDataBusy(true);
+    try {
+      const saved = await saveCompany(normalizeCompanyDraft(draftToSave));
+      selectCompany(saved.company);
+      setDataStatus(`Brand ulozen: ${saved.company.name || saved.company.id}`);
+      await refreshAll();
+    } catch (error) {
+      setDataStatus(error instanceof Error ? error.message : "Brand save failed.");
+    } finally {
+      setDataBusy(false);
+    }
+  };
+
+  const setDefaultCompany = async (company: Company) => {
+    setDataBusy(true);
+    try {
+      const saved = await makeDefaultCompany(company.id);
+      selectCompany(saved.company);
+      setDataStatus(`Vychozi brand: ${saved.company.name || saved.company.id}`);
+      await refreshAll();
+    } catch (error) {
+      setDataStatus(error instanceof Error ? error.message : "Default brand failed.");
+    } finally {
+      setDataBusy(false);
+    }
   };
 
   const selectAvatar = (avatar: Avatar) => {
@@ -1475,6 +1582,17 @@ export default function CreativeOsApp() {
             />
           )}
 
+          {view === "brands" && (
+            <BrandWorkspace
+              companies={companies}
+              activeCompanyId={form.company_id}
+              onSelect={selectCompany}
+              onCreate={createCompanyDraft}
+              onEdit={editCompanyDraft}
+              onMakeDefault={setDefaultCompany}
+            />
+          )}
+
           {view === "avatars" && (
             <AvatarWorkspace
               avatars={avatars}
@@ -1519,6 +1637,13 @@ export default function CreativeOsApp() {
             <CampaignPanel
               form={form}
               update={update}
+              companyOptions={companyOptions}
+              activeCompany={activeCompany}
+              onCompanySelect={(companyId) => {
+                const company = companies.find((item) => item.id === companyId);
+                if (company) selectCompany(company);
+                else update("company_id", companyId);
+              }}
               avatarOptions={avatarOptions}
               productFile={productFile}
               staticProductFiles={staticProductFiles}
@@ -1552,6 +1677,17 @@ export default function CreativeOsApp() {
               onView={selectView}
               onRefreshRun={() => void pollLatestRun(true)}
               onCancelRun={cancelRun}
+            />
+          )}
+
+          {view === "brands" && (
+            <BrandEditorPanel
+              draft={companyDraft}
+              setDraft={setCompanyDraft}
+              activeCompany={activeCompany}
+              onCreate={createCompanyDraft}
+              dataBusy={dataBusy}
+              saveCompanyDraft={saveCompanyDraft}
             />
           )}
 
@@ -1702,7 +1838,7 @@ function ChatWorkspace(props: {
                     {item.role === "user" && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Chip onClick={() => props.applyItem(item, "product")} icon={<Boxes className="h-3 w-3" />}>
-                          Produkt
+                          Ad brief
                         </Chip>
                         <Chip onClick={() => props.applyItem(item, "competitor")} icon={<BriefcaseBusiness className="h-3 w-3" />}>
                           Konkurence
@@ -2573,6 +2709,96 @@ function AvatarWorkspace(props: {
                       Edit
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => props.onMakeDefault(avatar)}>
+                      <Star className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    </WorkspaceScroll>
+  );
+}
+
+function BrandWorkspace(props: {
+  companies: Company[];
+  activeCompanyId: string;
+  onSelect: (company: Company) => void;
+  onCreate: () => void;
+  onEdit: (company: Partial<Company>) => void;
+  onMakeDefault: (company: Company) => void;
+}) {
+  return (
+    <WorkspaceScroll>
+      <div className="mx-auto grid max-w-5xl gap-4">
+        <Card className="border-emerald-200 bg-emerald-50/40">
+          <CardHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle>Brand library</CardTitle>
+                <CardDescription>Uloz brand, trh, voice a pravidla pro kvalitni ads kreativy.</CardDescription>
+              </div>
+              <Button onClick={props.onCreate}>
+                <BriefcaseBusiness className="h-4 w-4" />
+                New brand
+              </Button>
+            </div>
+          </CardHeader>
+        </Card>
+
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          <button
+            type="button"
+            onClick={props.onCreate}
+            className="flex min-h-72 flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-white p-6 text-center transition hover:border-emerald-800 hover:bg-emerald-50/40"
+          >
+            <span className="rounded-full bg-emerald-100 p-3 text-emerald-900">
+              <BriefcaseBusiness className="h-7 w-7" />
+            </span>
+            <span className="text-sm font-semibold">Create brand context</span>
+            <span className="max-w-64 text-xs leading-5 text-muted-foreground">
+              Jednou nastav trh, brand voice, zakazane claimy a pravidla kreativ. Pak je pouzijes pro kazdou reklamu.
+            </span>
+          </button>
+
+          {props.companies.map((company) => {
+            const active = props.activeCompanyId === company.id;
+            return (
+              <Card key={company.id} className={cn(active && "border-emerald-800 ring-1 ring-emerald-800")}>
+                <CardHeader>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border bg-emerald-950 text-white">
+                      <BriefcaseBusiness className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <CardTitle className="truncate">{company.name || company.id}</CardTitle>
+                      <CardDescription className="truncate">{company.id}</CardDescription>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {company.is_default && <Badge>Default</Badge>}
+                        {active && <Badge variant="secondary">Active</Badge>}
+                        {company.ad_vertical && <Badge variant="outline">{company.ad_vertical}</Badge>}
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">{company.positioning || company.audience || "No brand context yet."}</p>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <MiniStat label="Market" value={company.market || "-"} />
+                    <MiniStat label="Lang" value={company.language || "-"} />
+                    <MiniStat label="Channel" value={company.default_platform || "-"} />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button className="flex-1" size="sm" onClick={() => props.onSelect(company)}>
+                      <Check className="h-4 w-4" />
+                      Use
+                    </Button>
+                    <Button className="flex-1" size="sm" variant="secondary" onClick={() => props.onEdit(company)}>
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => props.onMakeDefault(company)}>
                       <Star className="h-4 w-4" />
                     </Button>
                   </div>
@@ -3658,9 +3884,9 @@ function ProductReferenceCard(props: {
       <CardHeader className={cn("pb-2", props.compact && "p-3 pb-2")}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-sm">Produktova reference pro video</CardTitle>
+            <CardTitle className="text-sm">Reference pro video</CardTitle>
             <CardDescription className="text-xs">
-              Video model potrebuje verejnou direct image URL. Lokalni upload zustava hlavne pro statiky a product intake.
+              Video model potrebuje verejnou direct visual URL. Lokalni upload zustava hlavne pro statiky a intake.
             </CardDescription>
           </div>
           <Badge variant={statusVariant}>{statusLabel}</Badge>
@@ -3668,7 +3894,7 @@ function ProductReferenceCard(props: {
       </CardHeader>
       <CardContent className={cn("grid gap-3", props.compact && "p-3 pt-0")}>
         <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-          Exact product image URL pro video
+          Direct visual URL pro video
           <Input
             value={props.form.product_reference_url}
             onChange={(event) => props.update("product_reference_url", event.target.value)}
@@ -3677,7 +3903,7 @@ function ProductReferenceCard(props: {
         </label>
         <div className={cn("grid gap-2", !props.compact && "sm:grid-cols-[1fr_auto] sm:items-end")}>
           <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-            Lokalni produktovy obrazek
+            Lokalni visual reference
             <Input
               type="file"
               accept="image/*"
@@ -3730,6 +3956,9 @@ function ProductReferenceCard(props: {
 function CampaignPanel(props: {
   form: CampaignForm;
   update: <K extends keyof CampaignForm>(key: K, value: CampaignForm[K]) => void;
+  companyOptions: Array<{ value: string; label: string }>;
+  activeCompany?: Company;
+  onCompanySelect: (companyId: string) => void;
   avatarOptions: Array<{ value: string; label: string }>;
   productFile: File | null;
   staticProductFiles: File[];
@@ -3801,18 +4030,19 @@ function CampaignPanel(props: {
         <Card className="mb-3 border-amber-300 bg-amber-50/80">
           <CardContent className="space-y-2 p-3 text-xs leading-5">
             <div className="flex items-center gap-2">
-              <Badge variant="outline">Product reference</Badge>
-              <span className="font-semibold text-amber-950">UGC video potrebuje verejnou image URL.</span>
+              <Badge variant="outline">Video reference</Badge>
+              <span className="font-semibold text-amber-950">UGC video potrebuje verejnou visual URL.</span>
             </div>
             <p className="text-amber-950/80">
-              Lokalni upload zustane pouzitelny pro statiky, ale video provider potrebuje exact product reference jako direct public image URL.
-              Vloz primo JPG/PNG/WebP/AVIF obrazek produktu, ne dokumentaci nebo produktovou stranku.
+              Lokalni upload zustane pouzitelny pro statiky, ale video provider potrebuje exact visual reference jako direct public image URL.
+              Vloz primo JPG/PNG/WebP/AVIF obrazek nebo referencni vizual, ne dokumentaci nebo obecnou stranku.
             </p>
           </CardContent>
         </Card>
       )}
 
       <div className="mb-4 grid gap-2">
+        <FieldSelect label="Brand" value={props.form.company_id} onChange={props.onCompanySelect} options={props.companyOptions} />
         <FieldSelect label="Avatar" value={props.form.avatar_id} onChange={(value) => props.update("avatar_id", value)} options={props.avatarOptions} />
         {settingRows.map((row) => (
           <FieldSelect
@@ -3876,7 +4106,15 @@ function CampaignPanel(props: {
       />
 
       <BriefCard
-        title="Product brief"
+        title="Brand context"
+        rows={[
+          ["Brand", props.activeCompany?.name || props.form.company_id || "ceka"],
+          ["Vertical", props.form.ad_vertical || props.activeCompany?.ad_vertical || "ads"],
+          ["Voice", props.activeCompany?.brand_voice || props.form.brand_context || "ceka"],
+        ]}
+      />
+      <BriefCard
+        title="Ad brief"
         rows={[
           ["Name", props.form.product_name || "ceka"],
           ["Info", props.form.product_info ? `${props.form.product_info.length} znaku` : "ceka"],
@@ -3985,6 +4223,90 @@ function DashboardPanel(props: {
           Creative review
         </Button>
       </div>
+    </>
+  );
+}
+
+function BrandEditorPanel(props: {
+  draft: Partial<Company>;
+  setDraft: React.Dispatch<React.SetStateAction<Partial<Company>>>;
+  activeCompany?: Company;
+  onCreate: () => void;
+  dataBusy: boolean;
+  saveCompanyDraft: () => void;
+}) {
+  const draft = props.draft.id ? props.draft : props.activeCompany || {};
+  const setField = (key: keyof Company, value: string | string[]) => props.setDraft((current) => ({ ...draft, ...current, [key]: value }));
+  const isNewDraft = Boolean(draft.id && draft.id !== props.activeCompany?.id);
+
+  return (
+    <>
+      <SideTitle title={isNewDraft ? "New brand" : "Brand editor"} subtitle={isNewDraft ? "Ads context pro novy brand" : "Defaulty pro dalsi kampane"} />
+      <Card className="mb-3">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>{isNewDraft ? "Create brand" : "Edit brand"}</CardTitle>
+              <CardDescription>Tohle je pamet pro reklamy: trh, voice, pravidla a zakazane claimy.</CardDescription>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={props.onCreate}>
+              <BriefcaseBusiness className="h-4 w-4" />
+              New
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-2 pt-4">
+          <FieldInput label="ID" value={draft.id || ""} onChange={(value) => setField("id", value)} />
+          <FieldInput label="Brand name" value={draft.name || ""} onChange={(value) => setField("name", value)} />
+          <FieldInput label="Ad vertical" value={draft.ad_vertical || ""} onChange={(value) => setField("ad_vertical", value)} />
+          <FieldInput label="Business model" value={draft.business_model || ""} onChange={(value) => setField("business_model", value)} />
+          <div className="grid grid-cols-3 gap-2">
+            <FieldInput label="Market" value={draft.market || ""} onChange={(value) => setField("market", value.toUpperCase())} />
+            <FieldInput label="Language" value={draft.language || ""} onChange={(value) => setField("language", value.toLowerCase())} />
+            <FieldInput label="Default channel" value={draft.default_platform || ""} onChange={(value) => setField("default_platform", value.toLowerCase())} />
+          </div>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Audience
+            <Textarea value={draft.audience || ""} onChange={(event) => setField("audience", event.target.value)} />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Positioning
+            <Textarea value={draft.positioning || ""} onChange={(event) => setField("positioning", event.target.value)} />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Brand voice
+            <Textarea value={draft.brand_voice || ""} onChange={(event) => setField("brand_voice", event.target.value)} />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Creative channels
+            <Textarea value={listToLines(draft.creative_channels)} onChange={(event) => setField("creative_channels", linesToList(event.target.value))} />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Categories / products handled by this brand
+            <Textarea value={listToLines(draft.product_categories)} onChange={(event) => setField("product_categories", linesToList(event.target.value))} />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Proof points for ads
+            <Textarea value={listToLines(draft.proof_points)} onChange={(event) => setField("proof_points", linesToList(event.target.value))} />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Creative quality rules
+            <Textarea value={listToLines(draft.creative_quality_rules)} onChange={(event) => setField("creative_quality_rules", linesToList(event.target.value))} />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Forbidden claims
+            <Textarea value={listToLines(draft.forbidden_claims)} onChange={(event) => setField("forbidden_claims", linesToList(event.target.value))} />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Compliance notes
+            <Textarea value={draft.compliance_notes || ""} onChange={(event) => setField("compliance_notes", event.target.value)} />
+          </label>
+          <Button onClick={props.saveCompanyDraft} disabled={props.dataBusy}>
+            {props.dataBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save brand
+          </Button>
+        </CardContent>
+      </Card>
     </>
   );
 }
@@ -4837,6 +5159,29 @@ function avatarIdFromName(value: string) {
   return `${slug || "avatar"}_${Date.now().toString(36)}`;
 }
 
+function companyIdFromName(value: string) {
+  const slug = value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return slug || `brand-${Date.now().toString(36)}`;
+}
+
+function listToLines(value: string[] | undefined) {
+  return (value || []).join("\n");
+}
+
+function linesToList(value: string) {
+  return cleanTextList(value.split(/\r?\n|,/g));
+}
+
+function cleanTextList(value: string[] | undefined) {
+  return Array.from(new Set((value || []).map((item) => String(item || "").trim()).filter(Boolean))).slice(0, 20);
+}
+
 function firstLine(text: string) {
   const labeledName = productNameFromChatText(text);
   if (labeledName) return labeledName;
@@ -4878,8 +5223,8 @@ function parserSummaryText(result: ParserResult) {
   ].filter(Boolean);
   const attachmentRoles = result.attachment_roles || [];
 
-  if (productName) lines.push(`Produkt: ${productName}`);
-  if (productReference) lines.push(`Reference produktu: ${productReference}`);
+  if (productName) lines.push(`Ad subject: ${productName}`);
+  if (productReference) lines.push(`Reference: ${productReference}`);
   if (productCategory) lines.push(`Kategorie: ${productCategory}`);
   if (productInfo) lines.push(`Popis: ${productInfo}`);
   if (competitor) lines.push(`Konkurence: ${competitor}`);
@@ -4951,6 +5296,31 @@ function nonEmptyPatch(current: CampaignForm, patch: Partial<CampaignForm>) {
   return result;
 }
 
+function applyCompanyDefaults(form: CampaignForm, company: Company): CampaignForm {
+  return {
+    ...form,
+    company_id: company.id || form.company_id,
+    ad_vertical: company.ad_vertical || form.ad_vertical,
+    market: company.market || form.market,
+    language: company.language || form.language,
+    platform: company.default_platform || form.platform,
+    brand_context: company.context_text || form.brand_context,
+    avatar_id: company.default_avatar_id || form.avatar_id,
+  };
+}
+
+function normalizeCompanyDraft(company: Partial<Company>): Partial<Company> {
+  return {
+    ...company,
+    id: company.id || companyIdFromName(company.name || "brand"),
+    creative_channels: cleanTextList(company.creative_channels),
+    product_categories: cleanTextList(company.product_categories),
+    proof_points: cleanTextList(company.proof_points),
+    forbidden_claims: cleanTextList(company.forbidden_claims),
+    creative_quality_rules: cleanTextList(company.creative_quality_rules),
+  };
+}
+
 function resetCampaignDraftForNewChat(current: CampaignForm): CampaignForm {
   return {
     ...current,
@@ -4999,14 +5369,14 @@ function chatWorkflowSteps(
     {
       id: "brief",
       title: "Brief",
-      detail: hasProduct ? "Produkt je pripraveny pro workflow." : "Ceka na produktovy text, URL nebo obrazek.",
+      detail: hasProduct ? "Ad brief je pripraveny pro workflow." : "Ceka na text reklamy, URL nebo obrazek.",
       state: hasProduct ? "done" : "active",
       meta: form.product_name || form.product_category || "",
     },
     {
       id: "reference",
       title: "Reference",
-      detail: productReferenceReady ? "Reference odpovida zvolenemu vystupu." : "Video potrebuje public direct image URL produktu.",
+      detail: productReferenceReady ? "Reference odpovida zvolenemu vystupu." : "Video potrebuje public direct visual URL.",
       state: productReferenceReady ? "done" : hasProduct ? "blocked" : "waiting",
       meta: videoMode ? "video fidelity" : "static only",
     },

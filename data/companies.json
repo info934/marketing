@@ -1,0 +1,44 @@
+[
+  {
+    "id": "kimlondon",
+    "name": "Kimlondon",
+    "ad_vertical": "fashion_ecommerce",
+    "business_model": "dropshipping",
+    "market": "UK",
+    "language": "en",
+    "default_platform": "meta",
+    "creative_channels": [
+      "meta",
+      "instagram",
+      "tiktok"
+    ],
+    "product_categories": [
+      "apparel",
+      "handbags",
+      "shoes"
+    ],
+    "audience": "UK shoppers comparing practical fashion, handbags, and shoes through believable creator proof.",
+    "positioning": "Accessible fashion and accessories shown in honest everyday contexts instead of luxury catalogue styling.",
+    "brand_voice": "British English, direct, natural, practical, low-hype, and buyer-proof.",
+    "proof_points": [
+      "real worn or carried context",
+      "visible scale, fit, shape, and detail proof",
+      "ordinary daily scenes for UK shoppers"
+    ],
+    "forbidden_claims": [
+      "invented reviews or ratings",
+      "fake discounts or fake scarcity",
+      "unverified material, comfort, or performance claims",
+      "luxury brand or designer implications"
+    ],
+    "compliance_notes": "Use only supplied product facts. Keep dropshipping creatives realistic and do not imply verified UK stock, delivery time, reviews, or discounts unless provided.",
+    "creative_quality_rules": [
+      "make every ad angle visibly different",
+      "show practical proof before aesthetic polish",
+      "avoid catalogue-looking images",
+      "prefer believable creator scenes over generic brand ads"
+    ],
+    "notes": "Default brand profile for ads creative generation.",
+    "is_default": true
+  }
+]

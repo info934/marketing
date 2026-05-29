@@ -16,6 +16,15 @@ from fastapi.staticfiles import StaticFiles
 
 from app import config
 from app.avatar_loader import default_avatar_id, list_avatars, load_avatar, set_default_avatar, upsert_avatar
+from app.company_loader import (
+    company_context,
+    company_context_text,
+    default_company_id,
+    list_companies,
+    load_company,
+    set_default_company,
+    upsert_company,
+)
 from app.react_ui import render_react_index
 from app.ui import render_index
 from app.services import (
@@ -122,6 +131,58 @@ def prompt_settings() -> dict[str, Any]:
 @app.get("/performance-memory")
 def get_performance_memory() -> dict[str, Any]:
     return performance_memory.load_memory()
+
+
+@app.get("/companies")
+def companies() -> dict[str, Any]:
+    default_id = default_company_id()
+    company_items = []
+    for company in list_companies():
+        item = _company_public_payload(company, default_id=default_id)
+        company_items.append(item)
+    return {
+        "version": "company_library_v1",
+        "default_company_id": default_id,
+        "companies": company_items,
+    }
+
+
+def _company_public_payload(company: dict[str, Any], default_id: str | None = None) -> dict[str, Any]:
+    item = dict(company)
+    if default_id is None:
+        default_id = default_company_id()
+    item["is_default"] = item.get("id") == default_id
+    item["context_text"] = company_context_text(item)
+    return item
+
+
+@app.post("/companies")
+def save_company(profile: dict[str, Any] = Body(...)) -> JSONResponse:
+    try:
+        saved = upsert_company(profile)
+    except ValueError as exc:
+        return JSONResponse(content={"status": "failed", "error": str(exc)}, status_code=400)
+    return JSONResponse(content={"status": "saved", "company": _company_public_payload(saved)})
+
+
+@app.put("/companies/{company_id}")
+def update_company(company_id: str, profile: dict[str, Any] = Body(...)) -> JSONResponse:
+    payload = dict(profile)
+    payload["id"] = company_id
+    try:
+        saved = upsert_company(payload)
+    except ValueError as exc:
+        return JSONResponse(content={"status": "failed", "error": str(exc)}, status_code=400)
+    return JSONResponse(content={"status": "saved", "company": _company_public_payload(saved)})
+
+
+@app.post("/companies/{company_id}/default")
+def make_default_company(company_id: str) -> JSONResponse:
+    try:
+        saved = set_default_company(company_id)
+    except ValueError as exc:
+        return JSONResponse(content={"status": "failed", "error": str(exc)}, status_code=404)
+    return JSONResponse(content={"status": "saved", "company": _company_public_payload(saved), "default_company_id": company_id})
 
 
 @app.get("/avatars")
@@ -1086,6 +1147,10 @@ def _generation_kwargs_from_form(
     return {
         "product_image": product_image,
         "product_static_images": product_static_images or [],
+        "company_id": _form_str(form, "company_id"),
+        "company_data": _form_optional_str(form, "company_data"),
+        "ad_vertical": _form_str(form, "ad_vertical"),
+        "brand_context": _form_str(form, "brand_context"),
         "product_name": _form_str(form, "product_name"),
         "product_info": _form_str(form, "product_info"),
         "product_category": _form_str(form, "product_category", "auto"),
@@ -1280,6 +1345,10 @@ def latest_output() -> JSONResponse:
 def generate(
     product_image: UploadFile | None = File(None),
     product_static_images: list[UploadFile] | None = File(None),
+    company_id: str = Form(""),
+    company_data: str | None = Form(None),
+    ad_vertical: str = Form(""),
+    brand_context: str = Form(""),
     product_name: str = Form(""),
     product_info: str = Form(""),
     product_category: str = Form("auto"),
@@ -1349,6 +1418,20 @@ def generate(
     workspace = "finance" if finance_mode else "ecommerce"
     ugc_scenario_model = ugc_scenario_model.strip() or config.OPENROUTER_UGC_SCENARIO_MODEL
     static_prompt_model = static_prompt_model.strip() or config.OPENROUTER_STATIC_PROMPT_MODEL
+    company_profile = load_company(company_id, company_data)
+    company_ctx = company_context(company_profile)
+    brand_context_text_value = brand_context.strip() or company_context_text(company_profile)
+    if company_profile:
+        ad_vertical = ad_vertical.strip() or str(company_profile.get("ad_vertical") or "")
+        if not market.strip() or market == config.DEFAULT_MARKET:
+            market = str(company_profile.get("market") or market)
+        if not language.strip() or language == config.DEFAULT_LANGUAGE:
+            language = str(company_profile.get("language") or language)
+        if not platform.strip() or platform == config.DEFAULT_PLATFORM:
+            platform = str(company_profile.get("default_platform") or platform)
+        default_company_avatar = str(company_profile.get("default_avatar_id") or "").strip()
+        if default_company_avatar and avatar_id in {"", "default_creator", "avatar1"}:
+            avatar_id = default_company_avatar
     if not existing_generation_run_id:
         active_run = generation_run_repository.active_run(workspace=workspace)
         if active_run:
@@ -1553,6 +1636,10 @@ def generate(
     if avatar_reference:
         avatar["image_url"] = avatar_reference
     input_data = {
+        "company_id": company_ctx.get("company_id") or company_id,
+        "company_profile": company_ctx,
+        "brand_context": brand_context_text_value,
+        "ad_vertical": ad_vertical.strip() or company_ctx.get("ad_vertical") or ("finance" if finance_mode else "ads"),
         "product_name": product_name,
         "product_info": product_info,
         "product_category": product_category,
@@ -1699,6 +1786,10 @@ def generate(
         elif finance_scene_prompt.strip():
             finance_scene_addendum += f"Approved scene prompt: {finance_scene_prompt.strip()[:1600]}"
     settings = {
+        "company_id": company_ctx.get("company_id") or company_id,
+        "company_profile": company_ctx,
+        "brand_context": brand_context_text_value,
+        "ad_vertical": ad_vertical.strip() or company_ctx.get("ad_vertical") or ("finance" if finance_mode else "ads"),
         "market": market,
         "language": language,
         "platform": platform,
@@ -1795,6 +1886,10 @@ def generate(
         data={"message": "Product Intake Agent is parsing product notes and safe facts."},
     )
     product_analysis = product_intake_agent.analyse(input_data, product_image_path)
+    if company_ctx:
+        product_analysis["company_profile"] = company_ctx
+        product_analysis["brand_context"] = brand_context_text_value
+        product_analysis["ad_vertical"] = settings["ad_vertical"]
     product_analysis["static_product_reference_paths"] = [str(path) for path in saved_static_product_image_paths]
     product_analysis["static_product_reference_count"] = len(saved_static_product_image_paths)
     generation_run_repository.update_stage(

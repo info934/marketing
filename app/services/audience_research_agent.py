@@ -34,6 +34,7 @@ def generate(
     performance_insights: dict[str, Any],
 ) -> dict[str, Any]:
     category = str(product_analysis.get("likely_product_category") or "unknown")
+    company = product_analysis.get("company_profile") or settings.get("company_profile") or {}
     facts = " ".join(product_analysis.get("user_provided_facts") or []).lower()
     safe_use_cases = " ".join(product_analysis.get("safe_use_cases") or []).lower()
     archetype_map = ARCHETYPES.get(category) or {
@@ -47,15 +48,22 @@ def generate(
     return {
         "agent": "Audience Research Agent",
         "category": category,
+        "company_profile": {
+            "company_id": company.get("company_id") or company.get("id"),
+            "company_name": company.get("company_name") or company.get("name"),
+            "ad_vertical": company.get("ad_vertical"),
+            "audience": company.get("audience"),
+            "positioning": company.get("positioning"),
+        },
         "market": settings.get("market"),
         "platform": settings.get("platform"),
         "primary_archetype": primary,
         "secondary_archetypes": secondary,
         "archetype_scores": scored,
-        "audience_summary": archetype_map[primary],
+        "audience_summary": _audience_summary(archetype_map[primary], company),
         "decision_triggers": _decision_triggers(category, primary),
         "objections": _objections(category, primary),
-        "content_bias": _content_bias(category, primary),
+        "content_bias": _company_content_bias(_content_bias(category, primary), company),
         "memory_signal": {
             "winning_archetypes": (performance_insights.get("seed_insights") or {}).get(
                 "winning_archetypes", []
@@ -63,6 +71,25 @@ def generate(
             "winning_record_count": performance_insights.get("winner_count", 0),
         },
     }
+
+
+def _audience_summary(default: str, company: dict[str, Any]) -> str:
+    audience = str(company.get("audience") or "").strip()
+    positioning = str(company.get("positioning") or "").strip()
+    if audience and positioning:
+        return f"{audience} Positioning lens: {positioning}"
+    return audience or default
+
+
+def _company_content_bias(default: str, company: dict[str, Any]) -> str:
+    proof_points = company.get("proof_points") or []
+    brand_voice = str(company.get("brand_voice") or "").strip()
+    parts = [default]
+    if proof_points:
+        parts.append("prefer brand proof points: " + ", ".join(str(item) for item in proof_points[:4]))
+    if brand_voice:
+        parts.append(f"brand voice: {brand_voice}")
+    return ". ".join(parts)
 
 
 def _score_archetypes(

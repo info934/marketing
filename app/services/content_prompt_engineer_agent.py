@@ -40,6 +40,42 @@ def _voice_profile(language: str, market: str) -> str:
     return f"natural creator voice for market {market}, relaxed conversational delivery"
 
 
+def _company_prompt_context(product_analysis: dict[str, Any], settings: dict[str, Any]) -> str:
+    company = settings.get("company_profile") or product_analysis.get("company_profile") or {}
+    if not company:
+        return ""
+    parts = []
+    name = str(company.get("company_name") or company.get("name") or "").strip()
+    ad_vertical = str(company.get("ad_vertical") or "").strip()
+    business_model = str(company.get("business_model") or "").strip()
+    audience = str(company.get("audience") or "").strip()
+    positioning = str(company.get("positioning") or "").strip()
+    brand_voice = str(company.get("brand_voice") or "").strip()
+    creative_channels = company.get("creative_channels") or []
+    proof_points = company.get("proof_points") or []
+    forbidden_claims = company.get("forbidden_claims") or []
+    quality_rules = company.get("creative_quality_rules") or []
+    if name:
+        parts.append(f"brand/client is {name}")
+    if ad_vertical or business_model:
+        parts.append(f"ad vertical {ad_vertical or 'general ads'}, business model {business_model or 'unspecified'}")
+    if creative_channels:
+        parts.append("channels: " + ", ".join(str(item) for item in creative_channels[:5]))
+    if audience:
+        parts.append(f"target audience: {audience}")
+    if positioning:
+        parts.append(f"positioning: {positioning}")
+    if brand_voice:
+        parts.append(f"voice: {brand_voice}")
+    if proof_points:
+        parts.append("proof moments to prefer: " + ", ".join(str(item) for item in proof_points[:5]))
+    if quality_rules:
+        parts.append("creative quality rules: " + ", ".join(str(item) for item in quality_rules[:5]))
+    if forbidden_claims:
+        parts.append("never imply: " + ", ".join(str(item) for item in forbidden_claims[:6]))
+    return ". ".join(parts)[:900]
+
+
 def generate_prompt_package(
     product_analysis: dict[str, Any],
     ugc_strategy: dict[str, Any],
@@ -82,6 +118,7 @@ def generate_prompt_package(
     scene_chaining = ugc_strategy.get("scene_chaining") or settings.get("scene_chaining") or {}
     scene_chaining_addendum = _clean_inline(scene_chaining.get("seedance_prompt_addendum") or "")
     voice_personality = ugc_strategy.get("voice_personality") or settings.get("voice_personality") or {}
+    company_prompt = _company_prompt_context(product_analysis, settings)
     creative_memory_guidance = (
         ugc_strategy.get("creative_memory_rag")
         or settings.get("creative_memory_guidance")
@@ -141,6 +178,8 @@ def generate_prompt_package(
         video_prompt = f"{video_prompt} {scene_chaining_addendum}"
     if learning_guidance and learning_guidance not in video_prompt:
         video_prompt = f"{video_prompt} Creative memory guidance: {learning_guidance}"
+    if company_prompt and company_prompt not in video_prompt:
+        video_prompt = f"{video_prompt} Brand ads context: {company_prompt}"
     if environment_control_directive and environment_control_directive not in video_prompt:
         video_prompt = f"{video_prompt} Environment control: {environment_control_directive}"
     ugc_prompt_skill = _ugc_prompt_skill_directive(ugc_strategy)
@@ -164,6 +203,8 @@ def generate_prompt_package(
         "customer_language_name": target_language_name(language),
         "language_copy_policy": language_copy_policy(language),
         "voice_personality": voice_personality,
+        "brand_ads_context": settings.get("company_profile") or product_analysis.get("company_profile") or {},
+        "company_prompt_context": company_prompt,
         "creative_memory_guidance": creative_memory_guidance,
         "scene_chaining": scene_chaining,
         "ugc_prompt_skill": ugc_strategy.get("ugc_prompt_skill"),

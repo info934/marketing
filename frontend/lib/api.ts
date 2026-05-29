@@ -1,4 +1,4 @@
-import type { Avatar, CampaignForm, ChatItem, Creative, IntelligenceSummary, LearningSnapshot, ParserResult, PromptSettings } from "@/lib/types";
+import type { Avatar, CampaignForm, ChatItem, Company, Creative, IntelligenceSummary, LearningSnapshot, ParserResult, PromptSettings } from "@/lib/types";
 
 export async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options);
@@ -53,6 +53,24 @@ export async function startGeneration(form: CampaignForm, productFile: File | nu
 
 export async function getAvatars() {
   return apiJson<{ avatars: Avatar[]; default_avatar_id?: string; stats?: Record<string, unknown> }>("/api/backend/avatars");
+}
+
+export async function getCompanies() {
+  return apiJson<{ companies: Company[]; default_company_id?: string }>("/api/backend/companies");
+}
+
+export async function saveCompany(profile: Partial<Company> & { id?: string }) {
+  return apiJson<{ status: string; company: Company }>("/api/backend/companies", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(profile),
+  });
+}
+
+export async function makeDefaultCompany(companyId: string) {
+  return apiJson<{ status: string; company: Company; default_company_id: string }>(`/api/backend/companies/${encodeURIComponent(companyId)}/default`, {
+    method: "POST",
+  });
 }
 
 export async function saveAvatar(profile: Partial<Avatar> & { id?: string }) {

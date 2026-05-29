@@ -2,6 +2,9 @@ export type GenerationMode = "both" | "video" | "static";
 
 export type CampaignForm = {
   app_mode: "ecommerce";
+  company_id: string;
+  ad_vertical: string;
+  brand_context: string;
   product_name: string;
   product_info: string;
   product_category: string;
@@ -43,6 +46,31 @@ export type CampaignForm = {
   category_prompt_handbag: string;
   category_prompt_shoes: string;
   category_prompt_apparel: string;
+};
+
+export type Company = {
+  id: string;
+  name?: string;
+  ad_vertical?: string;
+  business_model?: string;
+  market?: string;
+  language?: string;
+  default_platform?: string;
+  creative_channels?: string[];
+  product_categories?: string[];
+  audience?: string;
+  positioning?: string;
+  brand_voice?: string;
+  proof_points?: string[];
+  forbidden_claims?: string[];
+  creative_quality_rules?: string[];
+  compliance_notes?: string;
+  landing_page_url?: string;
+  website_url?: string;
+  default_avatar_id?: string;
+  notes?: string;
+  context_text?: string;
+  is_default?: boolean;
 };
 
 export type Avatar = {

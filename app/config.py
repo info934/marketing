@@ -12,6 +12,7 @@ load_dotenv(BASE_DIR / ".env")
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", BASE_DIR / "uploads"))
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", BASE_DIR / "output"))
 AVATAR_DATA_PATH = Path(os.getenv("AVATAR_DATA_PATH", BASE_DIR / "data" / "avatars.json"))
+COMPANY_DATA_PATH = Path(os.getenv("COMPANY_DATA_PATH", BASE_DIR / "data" / "companies.json"))
 CREATIVE_MEMORY_DB_PATH = Path(
     os.getenv("CREATIVE_MEMORY_DB_PATH", BASE_DIR / "data" / "creative_memory.sqlite")
 )

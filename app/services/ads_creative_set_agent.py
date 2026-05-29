@@ -46,6 +46,7 @@ def generate_ad_set(
     static_material_fidelity_lock = _static_material_fidelity_lock(product_analysis)
     emotional_angle = ugc_strategy.get("emotional_angle") or settings.get("emotional_angle") or {}
     emotional_directive = _emotional_directive(emotional_angle)
+    brand_context = _brand_ads_context_directive(settings, product_analysis)
     creative_memory = (
         ugc_strategy.get("creative_memory_rag")
         or (ugc_strategy.get("performance_insights") or {}).get("creative_memory_rag")
@@ -85,6 +86,8 @@ def generate_ad_set(
         emotional_directive=emotional_directive,
     )
     static_image_ads = _apply_angle_multiplier_to_static_ads(static_image_ads, angle_multiplier, angle_selector)
+    if brand_context:
+        static_image_ads = _apply_brand_context_to_static_ads(static_image_ads, brand_context)
     if memory_directive:
         static_image_ads = _apply_memory_to_static_ads(static_image_ads, memory_directive)
     if static_subject_lock:
@@ -99,6 +102,8 @@ def generate_ad_set(
         category_image_directive=category_image_directive,
     )
     carousel_ad = _apply_angle_multiplier_to_carousel(carousel_ad, angle_multiplier, angle_selector)
+    if brand_context:
+        carousel_ad = _apply_brand_context_to_carousel(carousel_ad, brand_context)
     if memory_directive:
         carousel_ad = _apply_memory_to_carousel(carousel_ad, memory_directive)
     if static_subject_lock:
@@ -121,6 +126,8 @@ def generate_ad_set(
         "static_visual_classifier_directive": static_visual_classifier_directive,
         "static_product_material_fidelity_lock": static_material_fidelity_lock,
         "static_subject_lock": static_subject_lock,
+        "brand_ads_context": settings.get("company_profile") or product_analysis.get("company_profile") or {},
+        "brand_ads_context_directive": brand_context,
         "marketing_skill_applied": {
             "source": "coreyhaines31/marketingskills skills/ad-creative",
             "principles": [
@@ -235,6 +242,72 @@ def _memory_directive(creative_memory: dict[str, Any]) -> str:
     if avoid:
         parts.append("Avoid rejected patterns: " + ", ".join(str(item) for item in avoid[:5]))
     return ". ".join(parts)[:700]
+
+
+def _brand_ads_context_directive(settings: dict[str, Any], product_analysis: dict[str, Any]) -> str:
+    company = settings.get("company_profile") or product_analysis.get("company_profile") or {}
+    if not company:
+        return ""
+    company_name = str(company.get("company_name") or company.get("name") or "").strip()
+    ad_vertical = str(company.get("ad_vertical") or "").strip()
+    business_model = str(company.get("business_model") or "").strip()
+    positioning = str(company.get("positioning") or "").strip()
+    audience = str(company.get("audience") or "").strip()
+    brand_voice = str(company.get("brand_voice") or "").strip()
+    creative_channels = company.get("creative_channels") or []
+    proof_points = company.get("proof_points") or []
+    forbidden_claims = company.get("forbidden_claims") or []
+    quality_rules = company.get("creative_quality_rules") or []
+    parts = []
+    if company_name:
+        parts.append(f"Brand/client context: {company_name}")
+    if ad_vertical or business_model:
+        parts.append(f"Ad vertical: {ad_vertical or 'general ads'}; business model: {business_model or 'unspecified'}")
+    if creative_channels:
+        parts.append("Ad channels: " + ", ".join(str(item) for item in creative_channels[:5]))
+    if audience:
+        parts.append(f"Audience: {audience}")
+    if positioning:
+        parts.append(f"Positioning: {positioning}")
+    if brand_voice:
+        parts.append(f"Brand voice: {brand_voice}")
+    if proof_points:
+        parts.append("Proof points to show: " + ", ".join(str(item) for item in proof_points[:5]))
+    if quality_rules:
+        parts.append("Creative quality rules: " + ", ".join(str(item) for item in quality_rules[:5]))
+    if forbidden_claims:
+        parts.append("Do not imply: " + ", ".join(str(item) for item in forbidden_claims[:6]))
+    return ". ".join(parts)[:900]
+
+
+def _apply_brand_context_to_static_ads(items: list[dict[str, Any]], directive: str) -> list[dict[str, Any]]:
+    updated = []
+    for item in items:
+        copied = dict(item)
+        copied["visual_prompt"] = _append_once(
+            copied.get("visual_prompt"),
+            f"Brand ads context: {directive}",
+        )
+        copied["brand_ads_context_applied"] = directive
+        updated.append(copied)
+    return updated
+
+
+def _apply_brand_context_to_carousel(carousel: dict[str, Any], directive: str) -> dict[str, Any]:
+    copied = dict(carousel)
+    copied["brand_ads_context_applied"] = directive
+    copied["cards"] = [
+        {
+            **card,
+            "visual_prompt": _append_once(
+                card.get("visual_prompt"),
+                f"Brand ads context: {directive}",
+            ),
+            "brand_ads_context_applied": directive,
+        }
+        for card in carousel.get("cards") or []
+    ]
+    return copied
 
 
 def _apply_memory_to_static_ads(items: list[dict[str, Any]], directive: str) -> list[dict[str, Any]]:

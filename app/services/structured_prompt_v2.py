@@ -101,6 +101,7 @@ PROVIDER_BLOCK_LABELS = {
     "language_guard": "Language instructions",
     "speech_audio_contract": "Speech and audio instructions",
     "seedance_provider_contract": "Video generation instructions",
+    "brand_ads_context": "Brand ads context",
     "emotion": "Emotion notes",
     "learning": "Learning notes",
     "environment_control": "Environment instructions",
@@ -297,6 +298,7 @@ def build(
         "language_guard": _language_guard(ugc_strategy, content_prompt_package),
         "speech_audio_contract": _speech_audio_contract(ugc_strategy, content_prompt_package),
         "seedance_provider_contract": _seedance_provider_contract(content_prompt_package, ugc_strategy),
+        "brand_ads_context": _brand_ads_context(product_analysis, content_prompt_package, settings),
         "emotion": _emotion_block(ugc_strategy),
         "learning": _learning_block(ugc_strategy, content_prompt_package),
         "environment_control": _environment_control(content_prompt_package),
@@ -361,6 +363,7 @@ def compile_prompt(
             _block_line("ugc_prompt_skill", structured.get("ugc_prompt_skill"), compact=compact),
             _block_line("video_extra_direction", structured.get("video_extra_direction"), compact=compact),
             _block_line("approved_scene_concept", structured.get("approved_scene_concept"), compact=compact),
+            _block_line("brand_ads_context", structured.get("brand_ads_context"), compact=compact),
         ]
     )
     for scene in structured.get("scenes") or []:
@@ -412,6 +415,7 @@ def compile_prompt(
             _block_line("language_guard", structured.get("language_guard"), compact=compact),
             _block_line("speech_audio_contract", structured.get("speech_audio_contract"), compact=compact),
             _block_line("seedance_provider_contract", structured.get("seedance_provider_contract"), compact=compact),
+            _block_line("brand_ads_context", structured.get("brand_ads_context"), compact=compact),
             _block_line("emotion", structured.get("emotion"), compact=compact),
             _block_line("learning", structured.get("learning"), compact=compact),
             _block_line("camera_global", structured.get("camera_global"), compact=compact),
@@ -1043,6 +1047,34 @@ def _learning_block(
         "avoid_patterns": (guidance.get("avoid_patterns") or [])[:8],
         "confidence": ((guidance.get("learning_layer") or {}).get("confidence")),
         "rule": "use memory as bias only, never invent claims or override product/avatar fidelity",
+    }
+
+
+def _brand_ads_context(
+    product_analysis: dict[str, Any],
+    content_prompt_package: dict[str, Any],
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    company = (
+        content_prompt_package.get("brand_ads_context")
+        or settings.get("company_profile")
+        or product_analysis.get("company_profile")
+        or {}
+    )
+    if not isinstance(company, dict) or not company:
+        return {}
+    return {
+        "company_name": company.get("company_name") or company.get("name"),
+        "ad_vertical": company.get("ad_vertical") or product_analysis.get("ad_vertical") or settings.get("ad_vertical"),
+        "business_model": company.get("business_model"),
+        "channels": (company.get("creative_channels") or [])[:5],
+        "audience": company.get("audience"),
+        "positioning": company.get("positioning"),
+        "brand_voice": company.get("brand_voice"),
+        "proof_points": (company.get("proof_points") or [])[:6],
+        "creative_quality_rules": (company.get("creative_quality_rules") or [])[:6],
+        "forbidden_claims": (company.get("forbidden_claims") or [])[:6],
+        "rule": "use brand context to improve ad relevance and creative quality; do not invent claims, reviews, savings, discounts, delivery promises, or guarantees",
     }
 
 
