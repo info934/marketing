@@ -2101,6 +2101,76 @@ def test_mom_bag_scenario_does_not_trigger_apparel_try_on_from_fits_word():
     assert "apparel full-body worn view required" not in prompt
 
 
+def test_ugc_strategy_applies_bag_closed_contract_before_prompting():
+    scenario = (
+        "=== CHAT APPROVED SCENARIO START === "
+        "Title: Mom Bag Without The Diaper Bag. "
+        "Scene: A busy mom shows the crossbody bag during a normal day. "
+        "The bag stays closed. Do not open or close the zipper. "
+        "Do not show items being inserted into the bag. "
+        "Show diapers, wipes, snacks, phone, wallet, and keys placed next to the bag. "
+        "Camera: Handheld iPhone front camera."
+    )
+    product_analysis = {
+        "product_name": "The Roomiest Bum Bag",
+        "likely_product_category": "handbag",
+        "safest_creative_angle": "parent everyday carry",
+        "ad_safe_detail_phrases": ["zippered pockets", "wide strap", "body scale"],
+        "user_provided_facts": [],
+        "visual_product_understanding": {
+            "status": "completed",
+            "detected_object": "bum bag",
+            "subcategory": "handbag",
+            "category_confidence": 0.9,
+            "recommended_template_id": "carry_capacity_check",
+            "shot_requirements": [
+                "Open the zippered compartments to show the interior space",
+                "Shot of hands opening the main compartment and placing items inside",
+            ],
+        },
+    }
+    settings = {
+        "platform": "meta",
+        "language": "en",
+        "market": "UK",
+        "video_length": 15,
+        "ugc_video_extra_prompt": scenario,
+    }
+    avatar = {"name": "Avatar1", "style": "female natural creator"}
+
+    strategy = ugc_agent.generate_strategy(product_analysis, avatar, settings)
+    prompt_package = content_prompt_engineer_agent.generate_prompt_package(
+        product_analysis,
+        strategy,
+        avatar,
+        "bag.jpg",
+        settings,
+    )
+    integrity = scenario_integrity_guard.check(
+        product_analysis=product_analysis,
+        ugc_strategy=strategy,
+        content_prompt_package=prompt_package,
+        avatar=avatar,
+        ads_creative_set={"static_image_ads": [], "carousel_ad": {"cards": []}},
+    )
+
+    visuals = " ".join(scene["visual"].lower() for scene in strategy["scene_by_scene_script"])
+    voiceover = strategy["voiceover"].lower()
+    filtered_requirements = " ".join(strategy["category_video_recipe"]["visual_shot_requirements"]).lower()
+
+    assert strategy["user_scenario_contract"]["enabled"] is True
+    assert {"bag_closed", "no_insert_items", "parent_context", "parent_items"} <= set(strategy["user_scenario_contract"]["tags"])
+    assert strategy["videoagent_workflow"]["scenario_contract_plan"]["enabled"] is True
+    assert "beside the closed bag" in visuals
+    assert "next to the bag" in visuals
+    assert "opening the main compartment" not in visuals
+    assert "placing items inside" not in visuals
+    assert "go inside" not in voiceover
+    assert "open the zippered compartments" not in filtered_requirements
+    assert "placing items inside" not in filtered_requirements
+    assert integrity["status"] == "passed"
+
+
 def test_ugc_strategy_subtitles_are_short_caption_fragments():
     product_analysis = {
         "product_name": "Everyday Sneakers",

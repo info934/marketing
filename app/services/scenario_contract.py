@@ -250,6 +250,8 @@ def rewrite_for_contract(text: str, contract: dict[str, Any]) -> str:
     rewritten = str(text)
     tags = set(contract.get("tags") or [])
     if "bag_closed" in tags:
+        rewritten = re.sub(r"\btop opening and interior lining visible\b", "closed exterior zipper line visible", rewritten, flags=re.IGNORECASE)
+        rewritten = re.sub(r"\bopening and interior lining when visible\b", "closed exterior zipper-line detail", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(r"\bmain compartment\b", "exterior zipper line", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(r"\bzippered compartments?\b", "exterior zipper lines", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(r"\bcompartments?\b", "exterior zipper lines", rewritten, flags=re.IGNORECASE)
@@ -257,11 +259,16 @@ def rewrite_for_contract(text: str, contract: dict[str, Any]) -> str:
         rewritten = re.sub(r"\bopening detail\b", "exterior zipper-line detail", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(r"\bopening proof\b", "exterior scale proof", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(r"\binterior proof\b", "exterior scale proof", rewritten, flags=re.IGNORECASE)
+        rewritten = re.sub(r"\binterior lining\b", "exterior finish", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(r"\bvisible interior\b", "visible exterior scale", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(r"\binterior space\b", "outside scale", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(r"\baccess cues\b", "outside scale cues", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(r"\bcapacity cues\b", "beside-the-bag scale cues", rewritten, flags=re.IGNORECASE)
     if "no_insert_items" in tags:
+        rewritten = re.sub(r"\bgoing inside one by one\b", "placed beside the closed bag one by one", rewritten, flags=re.IGNORECASE)
+        rewritten = re.sub(r"\bgo inside\b", "sit beside the closed bag", rewritten, flags=re.IGNORECASE)
+        rewritten = re.sub(r"\bpasses? visibly hinein\b", "liegen sichtbar daneben", rewritten, flags=re.IGNORECASE)
+        rewritten = re.sub(r"\bjdou prehledne dovnitr\b", "lezi prehledne vedle zavrene tasky", rewritten, flags=re.IGNORECASE)
         rewritten = re.sub(
             r"\b(place|placing|put|putting|insert|inserting|pack|packing|slide|sliding)\b([^.;]{0,45})\b(in|inside|into)\b",
             r"place\2 beside",

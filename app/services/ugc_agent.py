@@ -12,7 +12,7 @@ from app.services.localization_utils import (
     localize_phrase,
     target_language_name,
 )
-from app.services import arcads_ugc_guidance
+from app.services import arcads_ugc_guidance, scenario_contract
 from app.services.text_utils import sanitize_avatar_descriptor
 
 
@@ -761,10 +761,38 @@ def _user_scenario_lock(
         rules.append("handheld smartphone feel with slight sway and imperfect framing")
     if natural_tone:
         rules.append("short relaxed sentences, calm friend-to-friend tone, personal recommendation energy")
+    bag_closed_requested = any(
+        marker in lowered
+        for marker in [
+            "bag stays closed",
+            "keep the bag closed",
+            "do not open",
+            "do not open or close the zipper",
+            "neotevirat",
+            "neotevírat",
+        ]
+    )
+    no_insert_requested = any(
+        marker in lowered
+        for marker in [
+            "do not show items being inserted",
+            "do not show items inserted",
+            "do not place items inside",
+            "nevkladat",
+            "nevkládat",
+        ]
+    )
     if any(marker in lowered for marker in ["mom", "mother", "mum", "mama"]):
         rules.append("adult woman/mom creator subject lock; keep the parent-routine context when safe and product-relevant")
         if any(marker in lowered for marker in ["child", "kid", "baby", "diaper", "diapers", "wipes"]):
-            rules.append("parent routine proof: use diapers, wipes, snacks, phone, wallet, and keys as bag contents where plausible; do not require a visible child")
+            if bag_closed_requested or no_insert_requested:
+                rules.append("parent routine proof: place diapers, wipes, snacks, phone, wallet, and keys beside the closed bag; never insert them into the bag")
+            else:
+                rules.append("parent routine proof: use diapers, wipes, snacks, phone, wallet, and keys as bag contents where plausible; do not require a visible child")
+    if bag_closed_requested:
+        rules.append("product action lock: the bag stays closed; do not open, unzip, close, or reveal compartments")
+    if no_insert_requested:
+        rules.append("product action lock: proof items stay beside the bag; do not put, pack, place, or insert items inside")
     if is_apparel_like:
         rules.append("full-body or near full-body garment view first; show cut, waist, neckline, hem, drape, and overall fit by turning slightly")
 
@@ -993,6 +1021,135 @@ def _scenario_lock_scene_direction(index: int, template_id: Any, category: str) 
     )
 
 
+def _apply_scenario_contract_to_video_scenes(
+    scenes: list[dict[str, Any]],
+    contract: dict[str, Any],
+    *,
+    language: str,
+    category: str,
+) -> list[dict[str, Any]]:
+    if not contract.get("enabled"):
+        return scenes
+    tags = set(contract.get("tags") or [])
+    updated: list[dict[str, Any]] = []
+    for index, scene in enumerate(scenes):
+        copied = dict(scene)
+        copied["visual"] = _contract_safe_scene_visual(
+            copied.get("visual"),
+            contract,
+            index=index,
+            language=language,
+            category=category,
+        )
+        copied["voiceover"] = _contract_safe_voiceover(
+            copied.get("voiceover"),
+            contract,
+            index=index,
+            language=language,
+            category=category,
+        )
+        copied["shot_type"] = _contract_safe_shot_type(copied.get("shot_type"), contract, index=index)
+        copied["scenario_contract_tags"] = sorted(tags)
+        copied["scenario_contract_status"] = "applied"
+        updated.append(copied)
+    return updated
+
+
+def _contract_safe_scene_visual(
+    visual: Any,
+    contract: dict[str, Any],
+    *,
+    index: int,
+    language: str,
+    category: str,
+) -> str:
+    text = scenario_contract.rewrite_for_contract(str(visual or ""), contract)
+    text = scenario_contract.remove_conflicting_directives(text, contract)
+    tags = set(contract.get("tags") or [])
+    if category == "handbag" and {"bag_closed", "no_insert_items"} & tags:
+        role = [
+            "closed-bag hook with adult woman/mom creator, bag worn crossbody or held in hand, exterior silhouette and body scale visible",
+            "closed-bag proof: diapers, wipes, snacks, phone, wallet, and keys placed beside the bag for scale; no zipper opening and no items inserted",
+            "exterior detail proof only: strap, zipper line, checkered pattern, stitching, silhouette, and scale while the bag stays closed",
+            "everyday carry recap with the closed bag on shoulder or in hand, same product size and identity preserved",
+        ][min(index, 3)]
+        text = f"{role}. {text}"
+    lock = scenario_contract.video_prompt_lock(contract)
+    if lock and lock not in text:
+        text = f"{text} Approved scenario contract: {lock}"
+    return _clean_scene_direction(text)
+
+
+def _contract_safe_voiceover(
+    voiceover: Any,
+    contract: dict[str, Any],
+    *,
+    index: int,
+    language: str,
+    category: str,
+) -> str:
+    text = scenario_contract.rewrite_for_contract(str(voiceover or ""), contract)
+    tags = set(contract.get("tags") or [])
+    if category == "handbag" and {"bag_closed", "no_insert_items"} & tags:
+        if index == 1:
+            if _is_czech(language):
+                return "Plenky, ubrousky, telefon a klice ukazou meritko vedle zavrene tasky."
+            if _is_german(language):
+                return "Windeln, Tuecher, Handy und Schluessel zeigen die Groesse neben der geschlossenen Tasche."
+            return "Diapers, wipes, phone, and keys beside the closed bag make the scale clear."
+        if index == 2:
+            if _is_czech(language):
+                return "Zblizka jde videt popruh, zipova linie, tvar a vzor bez otevirani."
+            if _is_german(language):
+                return "Aus der Naehe sieht man Riemen, Reissverschlusslinie, Form und Muster ohne Oeffnen."
+            return "Up close, you can check the strap, zipper line, shape, and pattern without opening it."
+    return _clean_scene_direction(text)
+
+
+def _contract_safe_shot_type(value: Any, contract: dict[str, Any], *, index: int) -> str:
+    text = scenario_contract.rewrite_for_contract(str(value or ""), contract)
+    text = scenario_contract.remove_conflicting_directives(text, contract)
+    tags = set(contract.get("tags") or [])
+    if {"bag_closed", "no_insert_items"} & tags:
+        return [
+            "closed-bag hook",
+            "beside-the-bag scale proof",
+            "closed exterior detail proof",
+            "closed-bag carry recap",
+        ][min(index, 3)]
+    return _clean_scene_direction(text)
+
+
+def _scenario_contract_video_plan(contract: dict[str, Any], scenes: list[dict[str, Any]]) -> dict[str, Any]:
+    if not contract.get("enabled"):
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "source": contract.get("source"),
+        "version": contract.get("version"),
+        "tags": contract.get("tags") or [],
+        "subject_gender": contract.get("subject_gender"),
+        "must_include_any": contract.get("must_include_any") or [],
+        "forbidden_checks": [
+            {"id": item.get("id"), "label": item.get("label")}
+            for item in contract.get("forbidden_checks") or []
+        ],
+        "scene_contract": [
+            {
+                "time": scene.get("time"),
+                "shot_type": scene.get("shot_type"),
+                "visual_contract": scene.get("visual"),
+            }
+            for scene in scenes
+        ],
+        "qa": [
+            "final provider prompt must pass scenario_integrity_guard before generation",
+            "visual classifier suggestions are advisory only when they conflict with this contract",
+            "spoken audio carries the hook; generated text overlays remain post-production metadata",
+        ],
+    }
+
+
 def _clean_scene_direction(value: str) -> str:
     return " ".join(str(value or "").split())
 
@@ -1150,6 +1307,17 @@ def generate_strategy(
     if scenario_lock.get("enabled"):
         scenes = _apply_user_scenario_lock_to_scenes(scenes, scenario_lock, category=category)
         scene_chaining = _apply_user_scenario_lock_to_scene_chaining(scene_chaining, scenario_lock)
+    user_scenario_contract = scenario_contract.build(
+        scenario_lock,
+        avatar=avatar,
+        product_analysis=product_analysis,
+    )
+    scenes = _apply_scenario_contract_to_video_scenes(
+        scenes,
+        user_scenario_contract,
+        language=language,
+        category=category,
+    )
     voiceover = " ".join(scene["voiceover"] for scene in scenes)
     ugc_prompt_skill = arcads_ugc_guidance.build_guidance(
         product_analysis,
@@ -1191,10 +1359,26 @@ def generate_strategy(
             "visual_detected_object": visual_product_understanding.get("detected_object"),
             "visual_subcategory": visual_product_understanding.get("subcategory"),
             "visual_recommended_template": visual_product_understanding.get("recommended_template_id"),
-            "visual_shot_requirements": visual_product_understanding.get("shot_requirements") or [],
+            "visual_shot_requirements": scenario_contract.filter_conflicting_items(
+                visual_product_understanding.get("shot_requirements") or [],
+                user_scenario_contract,
+            ),
             "user_scenario_lock_template": scenario_lock.get("template_id") if scenario_lock.get("enabled") else None,
         },
         "user_scenario_lock": scenario_lock,
+        "user_scenario_contract": user_scenario_contract,
+        "videoagent_workflow": {
+            "source": "local skill/videoagent",
+            "intent": "UGC ad scene direction and provider-ready prompt planning",
+            "steps": [
+                "parse user and product intent",
+                "choose product/category proof template",
+                "compile scene-by-scene beat plan",
+                "apply approved scenario contract",
+                "run provider preflight and scenario integrity before generation",
+            ],
+            "scenario_contract_plan": _scenario_contract_video_plan(user_scenario_contract, scenes),
+        },
         "ugc_prompt_skill": ugc_prompt_skill,
         "performance_insights": performance_insights,
         "audience_research": audience_research,
