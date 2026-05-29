@@ -1464,21 +1464,27 @@ export default function CreativeOsApp() {
     appendFiles(event.dataTransfer.files);
   };
 
+  const activeViewCopy = viewCopy[view];
+  const latestRunStatus = String(readRecord(latestRun?.monitor)?.status || latestRun?.status || "idle");
+  const activePhase = orchestrator?.phases.find((phase) => phase.id === orchestrator.current_phase);
+  const activePhaseLabel = activePhase?.title || "Brief";
+  const activeRunId = String(latestRun?.run_id || "");
+
   return (
-    <main className="h-dvh overflow-hidden bg-[#f7f7f8] text-foreground">
-      <div className="flex h-full min-h-0 flex-col overflow-hidden xl:grid xl:grid-cols-[268px_minmax(0,1fr)_360px]">
-        <aside className="chat-scroll hidden min-h-0 overflow-y-auto border-r bg-[#f3f4f6] p-4 xl:flex xl:flex-col">
-          <div className="mb-6 flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-950 text-white">
-              <Sparkles className="h-4 w-4" />
+    <main className="h-dvh overflow-hidden bg-[#eef1f4] text-foreground">
+      <div className="grid h-full min-h-0 overflow-hidden lg:grid-cols-[88px_minmax(0,1fr)] xl:grid-cols-[276px_minmax(0,1fr)_392px]">
+        <aside className="hidden min-h-0 border-r border-slate-200 bg-[#101820] text-white lg:flex lg:flex-col">
+          <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-4 xl:px-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[#23c7a9] text-[#06211e]">
+              <Sparkles className="h-5 w-5" />
             </div>
-            <div>
-              <p className="text-sm font-semibold">Creative OS</p>
-              <p className="text-xs text-muted-foreground">Next AI workspace</p>
+            <div className="hidden min-w-0 xl:block">
+              <p className="truncate text-sm font-semibold">Creative Agent</p>
+              <p className="truncate text-xs text-white/55">Ads orchestration portal</p>
             </div>
           </div>
 
-          <div className="space-y-1">
+          <nav className="chat-scroll min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4 xl:px-4">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = view === item.id;
@@ -1487,66 +1493,84 @@ export default function CreativeOsApp() {
                   key={item.id}
                   type="button"
                   onClick={() => selectView(item.id)}
+                  title={item.label}
                   className={cn(
-                    "flex w-full items-start gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                    active ? "bg-emerald-950 text-white" : "bg-white/70 hover:bg-white",
+                    "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors",
+                    active ? "bg-white text-[#101820]" : "text-white/68 hover:bg-white/10 hover:text-white",
                   )}
                 >
-                  <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", active ? "text-white" : "text-muted-foreground")} />
-                  <span className="min-w-0">
+                  <Icon className={cn("h-4 w-4 shrink-0", active ? "text-[#101820]" : "text-white/58")} />
+                  <span className="hidden min-w-0 xl:block">
                     <span className="block font-medium leading-4">{item.label}</span>
-                    <span className={cn("block truncate text-xs", active ? "text-white/75" : "text-muted-foreground")}>
+                    <span className={cn("block truncate text-xs", active ? "text-slate-500" : "text-white/45")}>
                       {item.description}
                     </span>
                   </span>
                 </button>
               );
             })}
-          </div>
+          </nav>
 
-          <div className="mt-5 space-y-2 text-sm">
+          <div className="hidden shrink-0 border-t border-white/10 p-4 xl:block">
+            <div className="space-y-2 text-xs">
             {readiness.map(([label, ready]) => (
-              <div key={String(label)} className="flex items-center justify-between rounded-md bg-white/70 px-3 py-2">
+                <div key={String(label)} className="flex items-center justify-between rounded-md bg-white/[0.07] px-3 py-2">
                 <span>{label}</span>
                 {ready ? (
-                  <Check className="h-4 w-4 text-emerald-700" />
+                    <Check className="h-4 w-4 text-[#23c7a9]" />
                 ) : (
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+                    <span className="h-2 w-2 rounded-full bg-white/35" />
                 )}
               </div>
             ))}
           </div>
-
-          <div className="mt-auto rounded-md border bg-white/70 p-3 text-xs leading-5 text-muted-foreground">
-            Vsechny moduly jsou nativni Next UI a sahaji na stejny FastAPI workflow backend.
           </div>
         </aside>
 
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b bg-white/85 px-4 py-3 backdrop-blur md:px-5">
-            <div>
-              <h1 className="text-base font-semibold">{viewCopy[view].title}</h1>
-              <p className="text-xs text-muted-foreground">{viewCopy[view].subtitle}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={refreshAll} disabled={dataBusy}>
-                {dataBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Sync
-              </Button>
-              <Button
-                size="sm"
-                variant={canCancelRun(latestRun) ? "destructive" : "outline"}
-                onClick={cancelRun}
-                disabled={!canCancelRun(latestRun) || dataBusy}
-                title={canCancelRun(latestRun) ? "Zrusit aktivni generation run" : "Zruseni je dostupne jen kdyz run aktivne bezi"}
-              >
-                <X className="h-4 w-4" />
-                Zrusit
-              </Button>
-              <Button size="sm" onClick={generate} disabled={busy}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                Generate
-              </Button>
+        <section className="flex min-h-0 flex-col overflow-hidden">
+          <header className="z-20 shrink-0 border-b border-slate-200 bg-white/92 backdrop-blur">
+            <div className="flex min-h-16 flex-col gap-3 px-3 py-3 md:px-5 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <Select
+                  aria-label="Workspace"
+                  className="h-9 w-44 lg:hidden"
+                  value={view}
+                  onChange={(event) => selectView(event.target.value as AppView)}
+                  options={navItems.map((item) => ({ value: item.id, label: item.label }))}
+                />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="truncate text-base font-semibold">{activeViewCopy.title}</h1>
+                    <Badge variant="secondary">{activePhaseLabel}</Badge>
+                    <Badge variant={isRunActive(latestRun) ? "default" : "outline"}>{latestRunStatus}</Badge>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{activeViewCopy.subtitle}</p>
+                </div>
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <div className="hidden min-w-0 rounded-md border bg-slate-50 px-3 py-2 text-xs md:block">
+                  <span className="text-muted-foreground">Run </span>
+                  <span className="font-medium">{activeRunId ? activeRunId.slice(0, 22) : "not started"}</span>
+                </div>
+                <Button size="sm" variant="outline" onClick={refreshAll} disabled={dataBusy} title="Synchronizovat data">
+                  {dataBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Sync
+                </Button>
+                <Button
+                  size="sm"
+                  variant={canCancelRun(latestRun) ? "destructive" : "outline"}
+                  onClick={cancelRun}
+                  disabled={!canCancelRun(latestRun) || dataBusy}
+                  title={canCancelRun(latestRun) ? "Zrusit aktivni generation run" : "Zruseni je dostupne jen kdyz run aktivne bezi"}
+                >
+                  <X className="h-4 w-4" />
+                  Stop
+                </Button>
+                <Button size="sm" onClick={generate} disabled={busy}>
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                  Generate
+                </Button>
+              </div>
             </div>
           </header>
 
@@ -1650,7 +1674,17 @@ export default function CreativeOsApp() {
           )}
         </section>
 
-        <aside className="chat-scroll min-h-0 overflow-y-auto border-t bg-white p-4 xl:border-l xl:border-t-0">
+        <aside className="chat-scroll hidden min-h-0 overflow-y-auto border-l border-slate-200 bg-[#f8fafb] xl:block">
+          <div className="sticky top-0 z-10 border-b bg-[#f8fafb]/95 px-4 py-4 backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Mission Control</p>
+                <p className="text-xs text-muted-foreground">Brief, rules, assets, output</p>
+              </div>
+              <Badge variant="outline">{dataStatus}</Badge>
+            </div>
+          </div>
+          <div className="p-4">
           {view === "chat" && (
             <CampaignPanel
               form={form}
@@ -1747,6 +1781,7 @@ export default function CreativeOsApp() {
           {view === "settings" && (
             <SettingsPanel form={form} update={update} dataStatus={dataStatus} providerCapabilities={providerCapabilities} settings={promptSettings} />
           )}
+          </div>
         </aside>
       </div>
     </main>
@@ -1778,36 +1813,34 @@ function AgentCockpit(props: {
   const visiblePlanSkills = planSpecialists.map((specialist) => specialist.label).slice(0, 3).join(" + ") || "UGC + static skills";
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
-      <Card className="overflow-hidden border-emerald-200 bg-white">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">Orchestrator</Badge>
-                <Badge variant={props.busy ? "default" : "outline"}>{statusLabel}</Badge>
-                {props.activeCompany?.name && <Badge variant="outline">{props.activeCompany.name}</Badge>}
-              </div>
-              <CardTitle className="text-xl">{mission}</CardTitle>
-              <CardDescription className="mt-1 line-clamp-2">{activeOrchestrator?.next_action || props.status}</CardDescription>
+    <div className="grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.5fr)]">
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b px-4 py-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">Orchestrator</Badge>
+              <Badge variant={props.busy ? "default" : "outline"}>{statusLabel}</Badge>
+              {props.activeCompany?.name && <Badge variant="outline">{props.activeCompany.name}</Badge>}
             </div>
-            <div className="grid min-w-[176px] grid-cols-2 gap-2 text-xs">
-              <AgentMetric label="Output" value={modeLabel(props.form.generation_mode)} />
-              <AgentMetric label="Channel" value={props.form.platform || "meta"} />
-              <AgentMetric label="Market" value={props.form.market || "UK"} />
-              <AgentMetric label="Static" value={props.form.max_static_images || "8"} />
-            </div>
+            <h2 className="truncate text-xl font-semibold">{mission}</h2>
+            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{activeOrchestrator?.next_action || props.status}</p>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
+          <div className="grid min-w-[210px] grid-cols-2 gap-2 text-xs">
+            <AgentMetric label="Output" value={modeLabel(props.form.generation_mode)} />
+            <AgentMetric label="Channel" value={props.form.platform || "meta"} />
+            <AgentMetric label="Market" value={props.form.market || "UK"} />
+            <AgentMetric label="Static" value={props.form.max_static_images || "8"} />
+          </div>
+        </div>
+        <div className="space-y-3 p-4">
           <div className="grid gap-2 md:grid-cols-5">
             {steps.map((step) => (
-              <div key={step.id} className={cn("min-h-20 rounded-md border p-3", agentStepClass(step.state))}>
+              <div key={step.id} className={cn("min-h-24 rounded-md border p-3", agentStepClass(step.state))}>
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold">{step.title}</span>
                   {step.state === "done" ? <Check className="h-4 w-4 text-emerald-700" /> : <span className="h-2 w-2 rounded-full bg-current opacity-35" />}
                 </div>
-                <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{step.detail}</p>
+                <p className="line-clamp-3 text-xs leading-5 text-muted-foreground">{step.detail}</p>
               </div>
             ))}
           </div>
@@ -1816,8 +1849,8 @@ function AgentCockpit(props: {
             <AgentSignal icon={<GitBranch className="h-4 w-4" />} label="Specialists" value={visiblePlanSkills} />
             <AgentSignal icon={<Images className="h-4 w-4" />} label="Assets" value={`${props.staticProductFiles.length + (props.productFile ? 1 : 0)} refs`} />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
       <AgentVoiceVisualizer busy={props.busy} />
     </div>
   );
@@ -1835,7 +1868,7 @@ function AgentMetric(props: { label: string; value: string }) {
 function AgentSignal(props: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="flex min-h-14 items-center gap-2 rounded-md border bg-slate-50 px-3 py-2">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white text-emerald-800">{props.icon}</div>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white text-[#116b5d]">{props.icon}</div>
       <div className="min-w-0">
         <p className="text-xs font-semibold">{props.label}</p>
         <p className="truncate text-xs text-muted-foreground">{props.value}</p>
@@ -2016,36 +2049,60 @@ function ChatWorkspace(props: {
   }, [props.items.length, props.scenarioDrafts.length, props.approvedScenarioId, props.scenarioMessageId, props.chatResultRun]);
 
   return (
-    <>
+    <div
+      className={cn("flex min-h-0 flex-1 flex-col overflow-hidden bg-[#eef1f4] px-3 py-4 md:px-5", props.dragActive && "bg-teal-50")}
+      onDragOver={(event) => {
+        event.preventDefault();
+        props.onDragActive(true);
+      }}
+      onDragLeave={() => props.onDragActive(false)}
+      onDrop={props.onDrop}
+    >
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-4">
+        <AgentCockpit
+          form={props.form}
+          status={props.status}
+          busy={props.busy}
+          activeCompany={props.activeCompany}
+          orchestrator={props.orchestrator}
+          productFile={props.productFile}
+          staticProductFiles={props.staticProductFiles}
+          scenarioDrafts={props.scenarioDrafts}
+          approvedScenarioId={props.approvedScenarioId}
+        />
+
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex shrink-0 flex-col gap-3 border-b bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">Agent chat</Badge>
+                <Badge variant={props.busy ? "default" : "outline"}>{props.busy ? "working" : "ready"}</Badge>
+                <span className="text-xs text-muted-foreground">{props.items.length} messages</span>
+              </div>
+              <p className="mt-1 truncate text-sm font-medium">
+                {props.form.product_name || firstLine(props.form.product_info) || "New creative mission"}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={props.onNewChat} disabled={props.busy}>
+                <MessageSquare className="h-4 w-4" />
+                New
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={props.createScenarioDrafts} disabled={props.busy}>
+                <FlaskConical className="h-4 w-4" />
+                Plan
+              </Button>
+              <Button type="button" size="sm" onClick={props.generate} disabled={props.busy}>
+                {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                Generate
+              </Button>
+            </div>
+          </div>
+
       <div
-        className={cn("chat-scroll min-h-0 flex-1 overflow-y-auto px-3 py-5 md:px-6", props.dragActive && "bg-emerald-50")}
-        onDragOver={(event) => {
-          event.preventDefault();
-          props.onDragActive(true);
-        }}
-        onDragLeave={() => props.onDragActive(false)}
-        onDrop={props.onDrop}
+            className="chat-scroll min-h-0 flex-1 overflow-y-auto bg-[#fbfcfd] px-4 py-5"
       >
-        <div className="mx-auto flex max-w-5xl flex-col gap-4">
-          <AgentCockpit
-            form={props.form}
-            status={props.status}
-            busy={props.busy}
-            activeCompany={props.activeCompany}
-            orchestrator={props.orchestrator}
-            productFile={props.productFile}
-            staticProductFiles={props.staticProductFiles}
-            scenarioDrafts={props.scenarioDrafts}
-            approvedScenarioId={props.approvedScenarioId}
-          />
-          <ProductReferenceCard
-            form={props.form}
-            update={props.update}
-            productFile={props.productFile}
-            staticProductFiles={props.staticProductFiles}
-            setProductFile={props.setProductFile}
-            setStaticProductFiles={props.setStaticProductFiles}
-          />
+            <div className="mx-auto flex max-w-4xl flex-col gap-4">
           <AnimatePresence initial={false}>
             {props.items.map((item) => (
               <Fragment key={item.id}>
@@ -2054,12 +2111,12 @@ function ChatWorkspace(props: {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -12 }}
                   transition={{ duration: 0.18 }}
-                  className={cn("flex gap-3", item.role === "user" && "flex-row-reverse")}
+                      className={cn("flex gap-3", item.role === "user" && "flex-row-reverse")}
                 >
                   <div
                     className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border",
-                      item.role === "assistant" ? "border-emerald-950 bg-emerald-950 text-white" : "border-border bg-white",
+                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-md border shadow-sm",
+                          item.role === "assistant" ? "border-[#101820] bg-[#101820] text-white" : "border-slate-200 bg-white",
                     )}
                   >
                     {item.role === "assistant" ? <Bot className="h-4 w-4" /> : <UserRound className="h-4 w-4" />}
@@ -2067,8 +2124,8 @@ function ChatWorkspace(props: {
 
                   <div
                     className={cn(
-                      "max-w-[86%] rounded-lg border bg-white p-3 text-sm shadow-sm md:max-w-[82%]",
-                      item.role === "user" && "bg-[#e9f5ee]",
+                          "max-w-[88%] rounded-lg border bg-white p-3 text-sm shadow-sm md:max-w-[78%]",
+                          item.role === "user" && "border-teal-200 bg-[#e8f7f4]",
                     )}
                   >
                     <p className="whitespace-pre-wrap break-words leading-6">{item.text || "Obrazkova priloha"}</p>
@@ -2092,7 +2149,7 @@ function ChatWorkspace(props: {
                     )}
                     {item.role === "user" && (
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Chip onClick={() => props.applyItem(item, "product")} icon={<Boxes className="h-3 w-3" />}>
+                            <Chip onClick={() => props.applyItem(item, "product")} icon={<Boxes className="h-3 w-3" />}>
                           Ad brief
                         </Chip>
                         <Chip onClick={() => props.applyItem(item, "competitor")} icon={<BriefcaseBusiness className="h-3 w-3" />}>
@@ -2137,8 +2194,8 @@ function ChatWorkspace(props: {
         </div>
       </div>
 
-      <footer className="shrink-0 border-t bg-white px-3 py-4 md:px-5">
-        <div className="mx-auto max-w-5xl">
+          <footer className="shrink-0 border-t bg-white px-4 py-3">
+            <div className="mx-auto max-w-4xl">
           {!!props.pendingFiles.length && (
             <div className="mb-2 flex flex-wrap gap-2">
               {props.pendingFiles.map((file, index) => (
@@ -2156,12 +2213,12 @@ function ChatWorkspace(props: {
             </div>
           )}
 
-          <div className="rounded-lg border bg-white p-2 shadow-sm">
+              <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
             <Textarea
               value={props.draft}
               onChange={(event) => props.setDraft(event.target.value)}
               onPaste={props.onPaste}
-              placeholder="Zadej orchestratorovi reklamu, produkt/sluzbu, URL, konkurenci, avatar nebo kreativni smer..."
+                  placeholder="Napis agentovi produkt, sluzbu, cil, URL, konkurenci, avatar nebo kreativni smer..."
               className="min-h-20 resize-none border-0 shadow-none focus-visible:ring-0"
             />
             <ChatGenerationQuickControls form={props.form} update={props.update} />
@@ -2197,9 +2254,11 @@ function ChatWorkspace(props: {
               </div>
             </div>
           </div>
-        </div>
-      </footer>
-    </>
+            </div>
+          </footer>
+        </section>
+      </div>
+    </div>
   );
 }
 
@@ -4246,15 +4305,17 @@ function CampaignPanel(props: {
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 rounded-lg border bg-white p-3 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold">Agent control</p>
-          <p className="text-xs text-muted-foreground">Orchestrator stav</p>
+            <p className="text-sm font-semibold">Mission stack</p>
+            <p className="text-xs text-muted-foreground">Plan gate, references, brand, output</p>
         </div>
-        <Button size="sm" onClick={props.generate} disabled={props.busy}>
+          <Button size="sm" onClick={props.generate} disabled={props.busy}>
           {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
           Generate
         </Button>
+      </div>
       </div>
 
       <ChatWorkflowCard
