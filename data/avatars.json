@@ -1,0 +1,56 @@
+[
+  {
+    "id": "avatar1",
+    "name": "Avatar1",
+    "style": "smart, simple, stylish UGC presenter",
+    "appearance": "AI avatar reference image, identity controlled by supplied public image URL",
+    "voice": "warm, polished, trustworthy",
+    "image_url": "https://i.ibb.co/6082rzf9/newkoi.png",
+    "image_path": "C:/APP/SHOP/data/avatars/Avatar1.PNG",
+    "is_default": false
+  },
+  {
+    "id": "default_creator",
+    "name": "Default Creator",
+    "style": "natural creator",
+    "appearance": "AI avatar reference image, identity controlled by supplied public image URL",
+    "voice": "warm, clear, conversational",
+    "image_url": "https://i.ibb.co/6082rzf9/newkoi.png",
+    "is_default": true
+  },
+  {
+    "id": "premium_creator",
+    "name": "Premium Creator",
+    "style": "polished paid social creator",
+    "appearance": "confident presenter, clean studio lighting, consistent styling across scenes",
+    "voice": "calm, trustworthy, concise",
+    "image_url": "https://i.ibb.co/6082rzf9/newkoi.png",
+    "is_default": false
+  },
+  {
+    "id": "Bank",
+    "name": "Bankovník",
+    "style": "mluví klidně, prátelsky hraje si s tonem  ",
+    "appearance": "AI avatar reference image, identity controlled by supplied public image URL",
+    "voice": "přirozený klidný český přizvuk",
+    "image_url": "https://ibb.co/Dn4gc64",
+    "is_default": false
+  },
+  {
+    "id": "avatar_02",
+    "name": "Simana",
+    "style": "Professional German ecommerce consultant avatar, premium casual business outfit, cinematic lighting, realistic skin texture, calm confident facial expressions, direct eye contact, trustworthy and intelligent appearance, soft depth of field, modern startup founder aesthetic, ultra realistic.",
+    "appearance": "AI avatar reference image, identity controlled by supplied public image URL",
+    "voice": "Male German voice, age around 38-45, calm and trustworthy tone, premium ecommerce consultant style. Deep warm voice with clear pronunciation and natural pacing. Sounds intelligent, confident and professional, but still approachable. Slight polished commercial vibe, similar to a modern startup founder or financial advisor. No aggressive sales tone. Conversational and authentic.",
+    "image_url": "https://i.ibb.co/xK3srdp0/80c0fbaa-681c-4834-a802-5490bad0a1ee.png",
+    "is_default": false
+  },
+  {
+    "id": "avatar_mpmho37q",
+    "name": "NicolasAI",
+    "style": "natural UGC creator, normal and direct, slightly imperfect delivery",
+    "voice": "natural conversational creator voice, relaxed and ad-safe",
+    "image_url": "https://ibb.co/0jNHb8R7",
+    "appearance": "AI avatar reference image, identity controlled by supplied public image URL"
+  }
+]
