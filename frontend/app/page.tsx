@@ -2248,7 +2248,7 @@ function ChatWorkspace(props: {
     >
       <div className="mx-auto flex w-full max-w-[1720px] flex-col gap-4 2xl:h-full 2xl:min-h-0">
         <section className="shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_410px] xl:items-stretch 2xl:grid-cols-[minmax(0,1fr)_470px]">
+          <div className="grid gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_410px] xl:items-start 2xl:grid-cols-[minmax(0,1fr)_470px]">
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">Orchestrator command</Badge>
@@ -2281,118 +2281,129 @@ function ChatWorkspace(props: {
                   {generateButtonLabel}
                 </Button>
               </div>
+
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold">Brief intake</p>
+                    <p className="text-xs text-muted-foreground">Brand, market, product, references</p>
+                  </div>
+                  <Badge variant={hasBrief ? "secondary" : "outline"}>{hasBrief ? "ready" : "empty"}</Badge>
+                </div>
+
+                <div className="mt-3 grid gap-3 2xl:grid-cols-[0.85fr_1.15fr]">
+                  <div className="rounded-md border bg-white p-3">
+                    <p className="text-xs font-semibold text-slate-700">Campaign setup</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <FieldSelect
+                        label="Output"
+                        value={props.form.generation_mode}
+                        onChange={(value) => props.update("generation_mode", value as CampaignForm["generation_mode"])}
+                        options={[
+                          { value: "both", label: "Video + statiky" },
+                          { value: "video", label: "Jen video" },
+                          { value: "static", label: "Jen statiky" },
+                        ]}
+                      />
+                      {settingRows.map((row) => (
+                        <FieldSelect
+                          key={row.key}
+                          label={row.label}
+                          value={props.form[row.key]}
+                          onChange={(value) => props.update(row.key, value)}
+                          options={row.options}
+                        />
+                      ))}
+                      <FieldNumberInput
+                        label="UGC delka"
+                        value={props.form.video_length}
+                        onChange={(value) => props.update("video_length", value)}
+                        min={5}
+                        max={60}
+                        suffix="s"
+                      />
+                      <FieldNumberInput
+                        label="Statiky"
+                        value={props.form.max_static_images}
+                        onChange={(value) => props.update("max_static_images", value)}
+                        min={1}
+                        max={20}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 rounded-md border bg-white p-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <FieldSelect
+                        label="Brand"
+                        value={props.form.company_id}
+                        onChange={(value) => props.update("company_id", value)}
+                        options={
+                          props.activeCompany
+                            ? [{ value: props.activeCompany.id, label: props.activeCompany.name || props.activeCompany.id }]
+                            : [{ value: props.form.company_id, label: props.form.company_id || "No brand" }]
+                        }
+                      />
+                      <FieldInput label="Ad subject" value={props.form.product_name} onChange={(value) => props.update("product_name", value)} />
+                    </div>
+                    <div className="grid gap-2 lg:grid-cols-2">
+                      <label className="grid gap-1 text-xs font-medium">
+                        Product or service brief
+                        <Textarea
+                          value={props.form.product_info}
+                          onChange={(event) => props.update("product_info", event.target.value)}
+                          placeholder="Co prodavame, komu, proc by meli kliknout, hlavni benefit a duvod k duvere..."
+                          className="min-h-24 resize-none"
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs font-medium">
+                        Creative direction
+                        <Textarea
+                          value={props.form.ugc_video_extra_prompt}
+                          onChange={(event) => props.update("ugc_video_extra_prompt", event.target.value)}
+                          placeholder="Hook, angle, pohlavi avatara, scena, mood, claim limits..."
+                          className="min-h-24 resize-none"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-[11px]">
+                      <Badge variant={hasManualDirection ? "secondary" : "outline"}>{hasManualDirection ? "direction set" : "no direction"}</Badge>
+                      <Badge variant={hasApprovedPlan ? "secondary" : "outline"}>{hasApprovedPlan ? "approved plan" : "needs approval"}</Badge>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
+                  <ProductReferenceCard
+                    form={props.form}
+                    update={props.update}
+                    productFile={props.productFile}
+                    staticProductFiles={props.staticProductFiles}
+                    setProductFile={props.setProductFile}
+                    setStaticProductFiles={props.setStaticProductFiles}
+                    compact
+                  />
+
+                  <div className="space-y-3">
+                    {hasVideoRisk && (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+                        Pro video dopln direct public image URL. Lokalni upload zustava vhodny pro statiky.
+                      </div>
+                    )}
+                    <AvatarConsentCard
+                      checked={props.form.avatar_own_person_consent}
+                      onChange={(value) => props.update("avatar_own_person_consent", value)}
+                      compact
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
             <AgentVoiceVisualizer busy={props.busy} status={gateLabel} compact />
           </div>
         </section>
 
-        <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)] 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[360px_minmax(0,1fr)_420px]">
-          <aside className="chat-scroll min-h-0 space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold">Brief intake</p>
-                <p className="text-xs text-muted-foreground">Brand, market, product, references</p>
-              </div>
-              <Badge variant={hasBrief ? "secondary" : "outline"}>{hasBrief ? "ready" : "empty"}</Badge>
-            </div>
-
-            <div className="rounded-md border bg-slate-50 p-3">
-              <p className="text-xs font-semibold text-slate-700">Campaign setup</p>
-              <div className="mt-3 grid gap-2">
-                <FieldSelect
-                  label="Output"
-                  value={props.form.generation_mode}
-                  onChange={(value) => props.update("generation_mode", value as CampaignForm["generation_mode"])}
-                  options={[
-                    { value: "both", label: "Video + statiky" },
-                    { value: "video", label: "Jen video" },
-                    { value: "static", label: "Jen statiky" },
-                  ]}
-                />
-                {settingRows.map((row) => (
-                  <FieldSelect
-                    key={row.key}
-                    label={row.label}
-                    value={props.form[row.key]}
-                    onChange={(value) => props.update(row.key, value)}
-                    options={row.options}
-                  />
-                ))}
-                <div className="grid grid-cols-2 gap-2">
-                  <FieldNumberInput
-                    label="UGC delka"
-                    value={props.form.video_length}
-                    onChange={(value) => props.update("video_length", value)}
-                    min={5}
-                    max={60}
-                    suffix="s"
-                  />
-                  <FieldNumberInput
-                    label="Statiky"
-                    value={props.form.max_static_images}
-                    onChange={(value) => props.update("max_static_images", value)}
-                    min={1}
-                    max={20}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-2 rounded-md border bg-white p-3">
-              <FieldSelect
-                label="Brand"
-                value={props.form.company_id}
-                onChange={(value) => props.update("company_id", value)}
-                options={props.activeCompany ? [{ value: props.activeCompany.id, label: props.activeCompany.name || props.activeCompany.id }] : [{ value: props.form.company_id, label: props.form.company_id || "No brand" }]}
-              />
-              <FieldInput label="Ad subject" value={props.form.product_name} onChange={(value) => props.update("product_name", value)} />
-              <label className="grid gap-1 text-xs font-medium">
-                Product or service brief
-                <Textarea
-                  value={props.form.product_info}
-                  onChange={(event) => props.update("product_info", event.target.value)}
-                  placeholder="Co prodavame, komu, proc by meli kliknout, hlavni benefit a duvod k duvere..."
-                  className="min-h-28 resize-none"
-                />
-              </label>
-              <label className="grid gap-1 text-xs font-medium">
-                Creative direction
-                <Textarea
-                  value={props.form.ugc_video_extra_prompt}
-                  onChange={(event) => props.update("ugc_video_extra_prompt", event.target.value)}
-                  placeholder="Hook, angle, pohlavi avatara, scena, mood, claim limits..."
-                  className="min-h-24 resize-none"
-                />
-              </label>
-              <div className="flex flex-wrap gap-2 text-[11px]">
-                <Badge variant={hasManualDirection ? "secondary" : "outline"}>{hasManualDirection ? "direction set" : "no direction"}</Badge>
-                <Badge variant={hasApprovedPlan ? "secondary" : "outline"}>{hasApprovedPlan ? "approved plan" : "needs approval"}</Badge>
-              </div>
-            </div>
-
-            <ProductReferenceCard
-              form={props.form}
-              update={props.update}
-              productFile={props.productFile}
-              staticProductFiles={props.staticProductFiles}
-              setProductFile={props.setProductFile}
-              setStaticProductFiles={props.setStaticProductFiles}
-              compact
-            />
-
-            {hasVideoRisk && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
-                Pro video dopln direct public image URL. Lokalni upload zustava vhodny pro statiky.
-              </div>
-            )}
-
-            <AvatarConsentCard
-              checked={props.form.avatar_own_person_consent}
-              onChange={(value) => props.update("avatar_own_person_consent", value)}
-              compact
-            />
-          </aside>
-
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] 2xl:min-h-0 2xl:flex-1">
           <section className="flex min-h-[620px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm 2xl:min-h-0">
             <div className="flex shrink-0 flex-col gap-3 border-b bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
@@ -2555,7 +2566,7 @@ function ChatWorkspace(props: {
           </footer>
         </section>
 
-          <aside className="chat-scroll min-h-0 space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 shadow-sm xl:col-span-2 2xl:col-span-1">
+          <aside className="chat-scroll min-h-0 space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold">Execution queue</p>
