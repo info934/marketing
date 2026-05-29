@@ -1548,6 +1548,165 @@ def _run_strategy_phase(
     }
 
 
+def _run_creative_plan_phase(
+    *,
+    run_id: str,
+    product_analysis: dict[str, Any],
+    ugc_strategy: dict[str, Any],
+    avatar: dict[str, Any],
+    product_image_path: str | Path,
+    settings: dict[str, Any],
+    creative_memory_guidance: dict[str, Any],
+    finance_mode: bool,
+    openrouter_api_key: str,
+    prompt_model: str,
+    ugc_scenario_model: str,
+    static_prompt_model: str,
+    content_prompt_system: str,
+    content_prompt_task: str,
+) -> dict[str, Any]:
+    content_prompt_package = content_prompt_engineer_agent.generate_prompt_package(
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        avatar=avatar,
+        product_image_path=str(product_image_path),
+        settings=settings,
+    )
+    generation_run_repository.update_stage(
+        run_id,
+        "prompting",
+        status="prompting",
+        data={"message": "Content prompt package created; optional AI refinement follows."},
+    )
+    deterministic_content_prompt_package = deepcopy(content_prompt_package)
+    if finance_mode:
+        content_prompt_package["prompt_generation"] = {
+            "status": "finance_mode_deterministic",
+            "reason": "Finance personal brand mode uses a dedicated compliant video prompt compiler.",
+            "model": prompt_model,
+        }
+    else:
+        content_prompt_package = openrouter_prompt_client.enhance_prompt_package(
+            content_prompt_package=content_prompt_package,
+            product_analysis=product_analysis,
+            ugc_strategy=ugc_strategy,
+            avatar=avatar,
+            api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
+            model=ugc_scenario_model,
+            system_prompt=content_prompt_system.strip() or None,
+            task_prompt=content_prompt_task.strip() or None,
+        )
+    content_prompt_package = structured_prompt_v2.apply_to_prompt_package(
+        content_prompt_package=content_prompt_package,
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        settings=settings,
+    )
+    content_prompt_package["creative_memory_guidance"] = creative_memory_guidance
+    content_prompt_package["prompt_graph"] = prompt_graph_service.build_prompt_graph(
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        content_prompt_package=content_prompt_package,
+        settings=settings,
+    )
+
+    product_fidelity_result = product_fidelity_guard.check(
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        content_prompt_package=content_prompt_package,
+    )
+    compliance_result = compliance_guard.check(
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        content_prompt_package=content_prompt_package,
+    )
+    quality_result = quality_scorer.score(
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        content_prompt_package=content_prompt_package,
+        product_fidelity_result=product_fidelity_result,
+        compliance_result=compliance_result,
+    )
+
+    if quality_result.get("should_improve_once"):
+        content_prompt_package = content_prompt_engineer_agent.improve_prompt_package(
+            content_prompt_package, quality_result
+        )
+        content_prompt_package = structured_prompt_v2.apply_to_prompt_package(
+            content_prompt_package=content_prompt_package,
+            product_analysis=product_analysis,
+            ugc_strategy=ugc_strategy,
+            settings=settings,
+        )
+        product_fidelity_result = product_fidelity_guard.check(
+            product_analysis=product_analysis,
+            ugc_strategy=ugc_strategy,
+            content_prompt_package=content_prompt_package,
+        )
+        compliance_result = compliance_guard.check(
+            product_analysis=product_analysis,
+            ugc_strategy=ugc_strategy,
+            content_prompt_package=content_prompt_package,
+        )
+        quality_result = quality_scorer.score(
+            product_analysis=product_analysis,
+            ugc_strategy=ugc_strategy,
+            content_prompt_package=content_prompt_package,
+            product_fidelity_result=product_fidelity_result,
+            compliance_result=compliance_result,
+        )
+
+    content_prompt_package["creative_memory_guidance"] = creative_memory_guidance
+    content_prompt_package["prompt_graph"] = prompt_graph_service.build_prompt_graph(
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        content_prompt_package=content_prompt_package,
+        settings=settings,
+    )
+    generation_run_repository.update_stage(
+        run_id,
+        "creative_plan",
+        status="planning",
+        data={"message": "Prompt graph ready; building C1-C5 creative set."},
+    )
+    ads_creative_set = ads_creative_set_agent.generate_ad_set(
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        content_prompt_package=content_prompt_package,
+        avatar=avatar,
+        settings=settings,
+    )
+    if finance_mode:
+        ads_creative_set = finance_video_agent.generate_video_only_ad_set(
+            product_analysis=product_analysis,
+            ugc_strategy=ugc_strategy,
+            content_prompt_package=content_prompt_package,
+            avatar=avatar,
+            settings=settings,
+        )
+    deterministic_ads_creative_set = deepcopy(ads_creative_set)
+    if not finance_mode:
+        ads_creative_set = openrouter_prompt_client.enhance_ads_creative_set(
+            ads_creative_set=ads_creative_set,
+            product_analysis=product_analysis,
+            ugc_strategy=ugc_strategy,
+            api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
+            model=static_prompt_model,
+        )
+        ads_creative_set = ads_creative_set_agent.refresh_copy_validation(ads_creative_set)
+
+    return {
+        "content_prompt_package": content_prompt_package,
+        "deterministic_content_prompt_package": deterministic_content_prompt_package,
+        "product_fidelity_result": product_fidelity_result,
+        "compliance_result": compliance_result,
+        "quality_result": quality_result,
+        "ads_creative_set": ads_creative_set,
+        "deterministic_ads_creative_set": deterministic_ads_creative_set,
+        "final_export_status": quality_result["export_status"],
+    }
+
+
 @app.post("/creative-rating")
 def creative_rating(record: dict[str, Any] = Body(...)) -> JSONResponse:
     try:
@@ -2167,135 +2326,30 @@ def generate(
     )
     ugc_strategy = strategy_phase["ugc_strategy"]
     creative_memory_guidance = strategy_phase["creative_memory_guidance"]
-    content_prompt_package = content_prompt_engineer_agent.generate_prompt_package(
+    creative_plan_phase = _run_creative_plan_phase(
+        run_id=run_id,
         product_analysis=product_analysis,
         ugc_strategy=ugc_strategy,
         avatar=avatar,
-        product_image_path=str(product_image_path),
+        product_image_path=product_image_path,
         settings=settings,
+        creative_memory_guidance=creative_memory_guidance,
+        finance_mode=finance_mode,
+        openrouter_api_key=openrouter_api_key,
+        prompt_model=prompt_model,
+        ugc_scenario_model=ugc_scenario_model,
+        static_prompt_model=static_prompt_model,
+        content_prompt_system=content_prompt_system,
+        content_prompt_task=content_prompt_task,
     )
-    generation_run_repository.update_stage(
-        run_id,
-        "prompting",
-        status="prompting",
-        data={"message": "Content prompt package created; optional AI refinement follows."},
-    )
-    deterministic_content_prompt_package = deepcopy(content_prompt_package)
-    if finance_mode:
-        content_prompt_package["prompt_generation"] = {
-            "status": "finance_mode_deterministic",
-            "reason": "Finance personal brand mode uses a dedicated compliant video prompt compiler.",
-            "model": prompt_model,
-        }
-    else:
-        content_prompt_package = openrouter_prompt_client.enhance_prompt_package(
-            content_prompt_package=content_prompt_package,
-            product_analysis=product_analysis,
-            ugc_strategy=ugc_strategy,
-            avatar=avatar,
-            api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
-            model=ugc_scenario_model,
-            system_prompt=content_prompt_system.strip() or None,
-            task_prompt=content_prompt_task.strip() or None,
-        )
-    content_prompt_package = structured_prompt_v2.apply_to_prompt_package(
-        content_prompt_package=content_prompt_package,
-        product_analysis=product_analysis,
-        ugc_strategy=ugc_strategy,
-        settings=settings,
-    )
-    content_prompt_package["creative_memory_guidance"] = creative_memory_guidance
-    content_prompt_package["prompt_graph"] = prompt_graph_service.build_prompt_graph(
-        product_analysis=product_analysis,
-        ugc_strategy=ugc_strategy,
-        content_prompt_package=content_prompt_package,
-        settings=settings,
-    )
-    product_fidelity_result = product_fidelity_guard.check(
-        product_analysis=product_analysis,
-        ugc_strategy=ugc_strategy,
-        content_prompt_package=content_prompt_package,
-    )
-    compliance_result = compliance_guard.check(
-        product_analysis=product_analysis,
-        ugc_strategy=ugc_strategy,
-        content_prompt_package=content_prompt_package,
-    )
-    quality_result = quality_scorer.score(
-        product_analysis=product_analysis,
-        ugc_strategy=ugc_strategy,
-        content_prompt_package=content_prompt_package,
-        product_fidelity_result=product_fidelity_result,
-        compliance_result=compliance_result,
-    )
-
-    if quality_result.get("should_improve_once"):
-        content_prompt_package = content_prompt_engineer_agent.improve_prompt_package(
-            content_prompt_package, quality_result
-        )
-        content_prompt_package = structured_prompt_v2.apply_to_prompt_package(
-            content_prompt_package=content_prompt_package,
-            product_analysis=product_analysis,
-            ugc_strategy=ugc_strategy,
-            settings=settings,
-        )
-        product_fidelity_result = product_fidelity_guard.check(
-            product_analysis=product_analysis,
-            ugc_strategy=ugc_strategy,
-            content_prompt_package=content_prompt_package,
-        )
-        compliance_result = compliance_guard.check(
-            product_analysis=product_analysis,
-            ugc_strategy=ugc_strategy,
-            content_prompt_package=content_prompt_package,
-        )
-        quality_result = quality_scorer.score(
-            product_analysis=product_analysis,
-            ugc_strategy=ugc_strategy,
-            content_prompt_package=content_prompt_package,
-            product_fidelity_result=product_fidelity_result,
-            compliance_result=compliance_result,
-        )
-
-    content_prompt_package["creative_memory_guidance"] = creative_memory_guidance
-    content_prompt_package["prompt_graph"] = prompt_graph_service.build_prompt_graph(
-        product_analysis=product_analysis,
-        ugc_strategy=ugc_strategy,
-        content_prompt_package=content_prompt_package,
-        settings=settings,
-    )
-    generation_run_repository.update_stage(
-        run_id,
-        "creative_plan",
-        status="planning",
-        data={"message": "Prompt graph ready; building C1-C5 creative set."},
-    )
-    ads_creative_set = ads_creative_set_agent.generate_ad_set(
-        product_analysis=product_analysis,
-        ugc_strategy=ugc_strategy,
-        content_prompt_package=content_prompt_package,
-        avatar=avatar,
-        settings=settings,
-    )
-    if finance_mode:
-        ads_creative_set = finance_video_agent.generate_video_only_ad_set(
-            product_analysis=product_analysis,
-            ugc_strategy=ugc_strategy,
-            content_prompt_package=content_prompt_package,
-            avatar=avatar,
-            settings=settings,
-        )
-    deterministic_ads_creative_set = deepcopy(ads_creative_set)
-    if not finance_mode:
-        ads_creative_set = openrouter_prompt_client.enhance_ads_creative_set(
-            ads_creative_set=ads_creative_set,
-            product_analysis=product_analysis,
-            ugc_strategy=ugc_strategy,
-            api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
-            model=static_prompt_model,
-        )
-        ads_creative_set = ads_creative_set_agent.refresh_copy_validation(ads_creative_set)
-    final_export_status = quality_result["export_status"]
+    content_prompt_package = creative_plan_phase["content_prompt_package"]
+    deterministic_content_prompt_package = creative_plan_phase["deterministic_content_prompt_package"]
+    product_fidelity_result = creative_plan_phase["product_fidelity_result"]
+    compliance_result = creative_plan_phase["compliance_result"]
+    quality_result = creative_plan_phase["quality_result"]
+    ads_creative_set = creative_plan_phase["ads_creative_set"]
+    deterministic_ads_creative_set = creative_plan_phase["deterministic_ads_creative_set"]
+    final_export_status = creative_plan_phase["final_export_status"]
     prompt_api_key_available = bool(openrouter_api_key or config.OPENROUTER_API_KEY)
     static_prompt_generation = ads_creative_set.get("static_prompt_generation") or {}
     provider_validation = preflight_validator.validate(

@@ -188,6 +188,106 @@ def test_strategy_phase_keeps_specialist_outputs_and_runtime_safe_competitor_pro
     assert result["ugc_strategy"]["creative_memory_rag"]["winning_patterns"] == ["memory hook"]
 
 
+def test_creative_plan_phase_builds_prompt_guards_and_static_creatives(monkeypatch, tmp_path):
+    _configure_tmp_dirs(monkeypatch, tmp_path)
+    run = generation_run_repository.create_run(
+        workspace="ecommerce",
+        app_mode="ecommerce",
+        input_snapshot={"product_name": "The Roomiest Bum Bag"},
+        output_dir=str(tmp_path),
+    )
+    product_analysis = {"product_name": "The Roomiest Bum Bag"}
+    ugc_strategy = {"script": "show proof"}
+    avatar = {"name": "Creator"}
+    settings = {"language": "en"}
+    creative_memory_guidance = {"winning_patterns": ["carried scale"]}
+
+    monkeypatch.setattr(
+        main_module.content_prompt_engineer_agent,
+        "generate_prompt_package",
+        lambda **kwargs: {"seedance_video_prompt": "base prompt", "seedance_payload": {"prompt": "base prompt"}},
+    )
+
+    def fake_enhance_prompt_package(**kwargs):
+        package = {**kwargs["content_prompt_package"]}
+        package["prompt_generation"] = {"status": "ok", "model": kwargs["model"]}
+        package["custom_system_prompt"] = kwargs["system_prompt"]
+        package["custom_task_prompt"] = kwargs["task_prompt"]
+        return package
+
+    def fake_apply_structured(**kwargs):
+        package = {**kwargs["content_prompt_package"]}
+        package["structured_prompt_applied"] = True
+        return package
+
+    monkeypatch.setattr(main_module.openrouter_prompt_client, "enhance_prompt_package", fake_enhance_prompt_package)
+    monkeypatch.setattr(main_module.structured_prompt_v2, "apply_to_prompt_package", fake_apply_structured)
+    monkeypatch.setattr(main_module.prompt_graph_service, "build_prompt_graph", lambda **kwargs: {"nodes": ["prompt"]})
+    monkeypatch.setattr(
+        main_module.product_fidelity_guard,
+        "check",
+        lambda **kwargs: {"product_fidelity_status": "pass"},
+    )
+    monkeypatch.setattr(main_module.compliance_guard, "check", lambda **kwargs: {"compliance_status": "pass"})
+    monkeypatch.setattr(
+        main_module.quality_scorer,
+        "score",
+        lambda **kwargs: {"export_status": "ready", "should_improve_once": False},
+    )
+    monkeypatch.setattr(
+        main_module.ads_creative_set_agent,
+        "generate_ad_set",
+        lambda **kwargs: {"static_image_ads": [{"creative_id": "c1", "visual_prompt": "scale angle"}]},
+    )
+
+    def fake_enhance_ads_creative_set(**kwargs):
+        assert kwargs["model"] == "static-model"
+        ad_set = {**kwargs["ads_creative_set"]}
+        ad_set["static_prompt_generation"] = {"status": "ok"}
+        return ad_set
+
+    def fake_refresh_copy_validation(ads_creative_set):
+        refreshed = {**ads_creative_set}
+        refreshed["copy_validation_refreshed"] = True
+        return refreshed
+
+    monkeypatch.setattr(main_module.openrouter_prompt_client, "enhance_ads_creative_set", fake_enhance_ads_creative_set)
+    monkeypatch.setattr(main_module.ads_creative_set_agent, "refresh_copy_validation", fake_refresh_copy_validation)
+
+    result = main_module._run_creative_plan_phase(
+        run_id=run["run_id"],
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        avatar=avatar,
+        product_image_path=tmp_path / "product.jpg",
+        settings=settings,
+        creative_memory_guidance=creative_memory_guidance,
+        finance_mode=False,
+        openrouter_api_key="test-key",
+        prompt_model="prompt-model",
+        ugc_scenario_model="ugc-model",
+        static_prompt_model="static-model",
+        content_prompt_system="System prompt",
+        content_prompt_task="Task prompt",
+    )
+
+    assert result["deterministic_content_prompt_package"]["seedance_video_prompt"] == "base prompt"
+    assert result["content_prompt_package"]["prompt_generation"]["model"] == "ugc-model"
+    assert result["content_prompt_package"]["creative_memory_guidance"] == creative_memory_guidance
+    assert result["content_prompt_package"]["prompt_graph"] == {"nodes": ["prompt"]}
+    assert result["content_prompt_package"]["custom_system_prompt"] == "System prompt"
+    assert result["product_fidelity_result"]["product_fidelity_status"] == "pass"
+    assert result["compliance_result"]["compliance_status"] == "pass"
+    assert result["quality_result"]["export_status"] == "ready"
+    assert result["deterministic_ads_creative_set"]["static_image_ads"][0]["creative_id"] == "c1"
+    assert result["ads_creative_set"]["static_prompt_generation"]["status"] == "ok"
+    assert result["ads_creative_set"]["copy_validation_refreshed"] is True
+    assert result["final_export_status"] == "ready"
+
+    saved_run = generation_run_repository.get_run(run["run_id"])
+    assert [stage["stage"] for stage in saved_run["stage_results"]] == ["prompting", "creative_plan"]
+
+
 def test_orchestrator_exposes_simple_pipeline_and_specialist_skills(monkeypatch, tmp_path):
     _configure_tmp_dirs(monkeypatch, tmp_path)
     client = TestClient(app)
