@@ -155,6 +155,14 @@ type GeneratedChatAsset = {
   name: string;
   meta?: string;
 };
+type AgentBrainNode = {
+  id: string;
+  name: string;
+  role: string;
+  color: string;
+  palette: [string, string, string];
+  icon: ReactNode;
+};
 
 const defaultChatGptPromptModel = "openai/gpt-5.4-mini";
 const previousGeminiScenarioModel = "google/gemini-3.5-flash";
@@ -259,6 +267,49 @@ const promptModelOptions = [
   { value: "openai/gpt-4.1-mini", label: "GPT 4.1 Mini" },
   { value: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
 ] as const;
+
+const agentBrainNodes: AgentBrainNode[] = [
+  {
+    id: "orchestrator",
+    name: "Orchestrator",
+    role: "Ridici mozek",
+    color: "#e8c66a",
+    palette: ["#e8c66a", "#b8942f", "#fff0c0"],
+    icon: <Bot className="h-3.5 w-3.5" />,
+  },
+  {
+    id: "strategy",
+    name: "Strategist",
+    role: "Angle & offer",
+    color: "#27c08a",
+    palette: ["#27c08a", "#7affc0", "#1a9e6e"],
+    icon: <Wand2 className="h-3.5 w-3.5" />,
+  },
+  {
+    id: "ugc",
+    name: "UGC Director",
+    role: "Video scenare",
+    color: "#46e6ff",
+    palette: ["#46e6ff", "#9bf0ff", "#2fd0ff"],
+    icon: <Video className="h-3.5 w-3.5" />,
+  },
+  {
+    id: "static",
+    name: "Static Art",
+    role: "Ad visuals",
+    color: "#c46bff",
+    palette: ["#c46bff", "#e6a8ff", "#9a4bff"],
+    icon: <Images className="h-3.5 w-3.5" />,
+  },
+  {
+    id: "qa",
+    name: "QA Guard",
+    role: "Fidelity gate",
+    color: "#ff9f45",
+    palette: ["#ff9f45", "#ffd089", "#ff7a1a"],
+    icon: <ShieldCheck className="h-3.5 w-3.5" />,
+  },
+];
 
 const videoModelOptions = [
   { value: "bytedance/seedance-2.0-fast", label: "Seedance 2.0 Fast" },
@@ -1887,55 +1938,211 @@ function AgentSignal(props: { icon: ReactNode; label: string; value: string }) {
   );
 }
 
-function AgentVoiceVisualizer(props: { busy: boolean }) {
+function AgentVoiceVisualizer(props: { busy: boolean; status?: string; compact?: boolean }) {
   const [mode, setMode] = useState<AgentVoiceMode>("idle");
+  const [activeAgentId, setActiveAgentId] = useState(agentBrainNodes[0].id);
   const effectiveMode = props.busy ? "speaking" : mode;
   const active = effectiveMode !== "idle";
-  const bars = [22, 36, 54, 30, 62, 46, 28, 58, 34, 48, 26, 40];
+  const activeAgent = agentBrainNodes.find((agent) => agent.id === activeAgentId) || agentBrainNodes[0];
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+
+    const hexToRgb = (hex: string) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+    const palette = activeAgent.palette.map(hexToRgb);
+    const energyTarget = effectiveMode === "idle" ? 0.16 : effectiveMode === "listening" ? 0.55 : 0.86;
+    const blobs = Array.from({ length: 5 }, (_, index) => ({
+      angle: Math.random() * Math.PI * 2,
+      speed: (0.0009 + Math.random() * 0.0015) * (index % 2 ? 1 : -1),
+      distance: 0.1 + Math.random() * 0.16,
+      size: 0.3 + Math.random() * 0.2,
+      colorIndex: index % palette.length,
+      phase: Math.random() * 100,
+    }));
+    const particles = Array.from({ length: 72 }, (_, index) => ({
+      angle: Math.random() * Math.PI * 2,
+      radius: 0.36 + Math.random() * 0.32,
+      speed: (0.002 + Math.random() * 0.004) * (index % 2 ? 1 : -1),
+      size: 0.6 + Math.random() * 1.9,
+      phase: Math.random() * 100,
+    }));
+
+    let frame = 0;
+    let energy = energyTarget;
+    let width = 0;
+    let height = 0;
+    let animationFrame = 0;
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = rect.width;
+      height = rect.height;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+
+    const draw = () => {
+      frame += 1;
+      energy += (energyTarget - energy) * 0.08;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.min(width, height) / 2;
+      const breathe = 1 + Math.sin(frame * 0.025) * 0.035 + energy * 0.08;
+      context.clearRect(0, 0, width, height);
+      context.globalCompositeOperation = "lighter";
+
+      const haloColor = palette[0];
+      const halo = context.createRadialGradient(centerX, centerY, radius * 0.08, centerX, centerY, radius * 1.08);
+      halo.addColorStop(0, `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},${0.22 + energy * 0.24})`);
+      halo.addColorStop(0.48, `rgba(${haloColor[0]},${haloColor[1]},${haloColor[2]},0.07)`);
+      halo.addColorStop(1, "rgba(0,0,0,0)");
+      context.fillStyle = halo;
+      context.fillRect(0, 0, width, height);
+
+      blobs.forEach((blob) => {
+        blob.angle += blob.speed * (1 + energy * 2.2);
+        const wobble = Math.sin(frame * 0.035 + blob.phase) * 0.04;
+        const distance = (blob.distance + wobble) * radius;
+        const x = centerX + Math.cos(blob.angle) * distance;
+        const y = centerY + Math.sin(blob.angle) * distance;
+        const blobRadius = blob.size * radius * breathe;
+        const color = palette[blob.colorIndex];
+        const gradient = context.createRadialGradient(x, y, 0, x, y, blobRadius);
+        gradient.addColorStop(0, `rgba(${color[0]},${color[1]},${color[2]},${0.54 + energy * 0.3})`);
+        gradient.addColorStop(0.6, `rgba(${color[0]},${color[1]},${color[2]},0.13)`);
+        gradient.addColorStop(1, "rgba(0,0,0,0)");
+        context.fillStyle = gradient;
+        context.beginPath();
+        context.arc(x, y, blobRadius, 0, Math.PI * 2);
+        context.fill();
+      });
+
+      const coreColor = palette[2];
+      const core = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius * 0.46 * breathe);
+      core.addColorStop(0, "rgba(255,255,255,0.86)");
+      core.addColorStop(0.26, `rgba(${coreColor[0]},${coreColor[1]},${coreColor[2]},0.62)`);
+      core.addColorStop(1, "rgba(0,0,0,0)");
+      context.fillStyle = core;
+      context.beginPath();
+      context.arc(centerX, centerY, radius * 0.46 * breathe, 0, Math.PI * 2);
+      context.fill();
+
+      particles.forEach((particle, index) => {
+        particle.angle += particle.speed * (1 + energy * 1.4);
+        const pulse = Math.sin(frame * 0.08 + index * 0.48) * 0.5 + 0.5;
+        const ringRadius = particle.radius * radius * (1 + Math.sin(frame * 0.02 + particle.phase) * 0.06 + energy * 0.1);
+        const x = centerX + Math.cos(particle.angle) * ringRadius;
+        const y = centerY + Math.sin(particle.angle) * ringRadius;
+        const color = palette[index % palette.length];
+        context.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.38 + pulse * 0.45})`;
+        context.beginPath();
+        context.arc(x, y, particle.size * (1 + energy * 0.9 + pulse * 0.5), 0, Math.PI * 2);
+        context.fill();
+      });
+
+      context.globalCompositeOperation = "source-over";
+      animationFrame = requestAnimationFrame(draw);
+    };
+
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    animationFrame = requestAnimationFrame(draw);
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      observer.disconnect();
+    };
+  }, [activeAgent, effectiveMode]);
 
   return (
-    <Card className="border-slate-200 bg-[#101820] text-white">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Voice agent</CardTitle>
-            <CardDescription className="text-white/60">{voiceModeLabel(effectiveMode)}</CardDescription>
-          </div>
-          <div className={cn("flex h-10 w-10 items-center justify-center rounded-md", active ? "bg-emerald-400 text-emerald-950" : "bg-white/10")}>
-            {effectiveMode === "speaking" ? <Volume2 className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex h-24 items-center justify-center gap-1 rounded-md bg-white/5 px-4">
-          {bars.map((height, index) => (
-            <span
-              key={`${height}-${index}`}
-              className={cn("w-2 rounded-full bg-emerald-300 transition-all", active && "animate-pulse")}
-              style={{
-                height: `${active ? height : Math.max(10, height * 0.35)}px`,
-                animationDelay: `${index * 70}ms`,
-              }}
-            />
-          ))}
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            ["idle", "Idle"],
-            ["listening", "Listen"],
-            ["speaking", "Talk"],
-          ].map(([value, label]) => (
-            <Button
-              key={value}
+    <Card className="overflow-hidden border-[#e8c66a]/20 bg-[#05080a] text-white shadow-sm">
+      <CardContent className={cn("relative p-0", props.compact ? "min-h-[250px]" : "min-h-[360px]")}>
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_26%,rgba(39,192,138,0.18),rgba(5,8,10,0.94)_58%)]" />
+        <div className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:36px_36px]" />
+
+        <div className="relative grid h-full gap-3 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#f4ead0]">Agent brain</p>
+              <p className="mt-1 truncate text-[11px] uppercase tracking-[0.18em] text-white/45">{props.status || voiceModeLabel(effectiveMode)}</p>
+            </div>
+            <button
               type="button"
-              size="sm"
-              variant={effectiveMode === value ? "secondary" : "ghost"}
-              className={cn("text-xs", effectiveMode !== value && "text-white hover:bg-white/10 hover:text-white")}
-              onClick={() => setMode(value as AgentVoiceMode)}
+              onClick={() => setMode(effectiveMode === "listening" ? "idle" : "listening")}
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition",
+                active ? "border-[#e8c66a]/70 bg-[#e8c66a] text-[#05080a] shadow-[0_0_28px_rgba(232,198,106,0.55)]" : "border-[#e8c66a]/20 bg-white/5 text-[#e8c66a]",
+              )}
+              title="Voice mode"
             >
-              {label}
-            </Button>
-          ))}
+              {effectiveMode === "speaking" ? <Volume2 className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            </button>
+          </div>
+
+          <div className={cn("relative mx-auto grid aspect-square place-items-center", props.compact ? "w-[min(220px,48vw)]" : "w-[min(300px,54vw)]")}>
+            <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />
+            <div className="pointer-events-none relative rounded-full bg-[#05080a]/20 px-4 py-3 text-center shadow-[0_0_32px_rgba(5,8,10,0.35)] backdrop-blur-[1px]">
+              <p className="text-base font-semibold tracking-normal text-white drop-shadow-[0_1px_8px_rgba(0,0,0,0.75)]">{activeAgent.name}</p>
+              <p className="mt-1 text-[10px] uppercase tracking-[0.28em] text-white/70 drop-shadow-[0_1px_6px_rgba(0,0,0,0.85)]">{activeAgent.role}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-5 gap-1.5">
+            {agentBrainNodes.map((agent) => {
+              const selected = agent.id === activeAgent.id;
+              return (
+                <button
+                  key={agent.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveAgentId(agent.id);
+                    setMode("speaking");
+                  }}
+                  className={cn(
+                    "group flex min-w-0 flex-col items-center gap-1 rounded-md border px-1.5 py-2 transition",
+                    selected ? "bg-white/[0.06] text-white" : "border-transparent text-white/50 hover:border-white/10 hover:bg-white/[0.04] hover:text-white/80",
+                  )}
+                  style={{ borderColor: selected ? `${agent.color}88` : undefined }}
+                  title={`${agent.name} - ${agent.role}`}
+                >
+                  <span
+                    className={cn("flex h-8 w-8 items-center justify-center rounded-full transition", selected && "scale-105")}
+                    style={{
+                      background: `radial-gradient(circle at 35% 30%, rgba(255,255,255,.75), ${agent.color} 48%, rgba(0,0,0,.4) 100%)`,
+                      boxShadow: selected ? `0 0 22px ${agent.color}88` : `0 0 12px ${agent.color}44`,
+                    }}
+                  >
+                    {agent.icon}
+                  </span>
+                  <span className="w-full truncate text-[10px] font-semibold">{agent.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-3 gap-1.5">
+            {[
+              ["idle", "Idle"],
+              ["listening", "Listen"],
+              ["speaking", "Talk"],
+            ].map(([value, label]) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={effectiveMode === value ? "secondary" : "ghost"}
+                className={cn("h-8 text-xs", effectiveMode !== value && "text-white/65 hover:bg-white/10 hover:text-white")}
+                onClick={() => setMode(value as AgentVoiceMode)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -2090,8 +2297,8 @@ function ChatWorkspace(props: {
       onDrop={props.onDrop}
     >
       <div className="mx-auto flex w-full max-w-[1720px] flex-col gap-4 2xl:h-full 2xl:min-h-0">
-        <section className="shrink-0 rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_560px] lg:items-center">
+        <section className="shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="grid gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_410px] xl:items-stretch 2xl:grid-cols-[minmax(0,1fr)_470px]">
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">Orchestrator command</Badge>
@@ -2102,15 +2309,15 @@ function ChatWorkspace(props: {
               </div>
               <h2 className="truncate text-2xl font-semibold tracking-normal">{missionTitle}</h2>
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{nextAction}</p>
-            </div>
-            <div className="grid gap-3">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <AgentMetric label="Output" value={modeLabel(props.form.generation_mode)} />
                 <AgentMetric label="Market" value={props.form.market || "UK"} />
                 <AgentMetric label="Language" value={props.form.language || "en"} />
                 <AgentMetric label="Refs" value={`${referenceCount} assets`} />
               </div>
-              <div className="flex flex-wrap justify-end gap-2">
+
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={props.onNewChat} disabled={props.busy}>
                   <MessageSquare className="h-4 w-4" />
                   New run
@@ -2125,6 +2332,7 @@ function ChatWorkspace(props: {
                 </Button>
               </div>
             </div>
+            <AgentVoiceVisualizer busy={props.busy} status={gateLabel} compact />
           </div>
         </section>
 
