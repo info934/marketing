@@ -377,10 +377,26 @@ def test_orchestrator_exposes_simple_pipeline_and_specialist_skills(monkeypatch,
     assert payload["version"] == "creative_orchestrator_v1"
     assert [phase["id"] for phase in payload["phases"]] == ["brief", "strategy", "plan", "generate", "review"]
     specialist_ids = {specialist["id"] for specialist in payload["specialists"]}
-    assert {"ugc_video_scenarios", "static_ad_concepts", "scenario_integrity"} <= specialist_ids
+    assert {"marketing_skill_router", "ugc_video_scenarios", "static_ad_concepts", "scenario_integrity"} <= specialist_ids
+    assert payload["marketing_skill_registry"]["foundation_skill"]["id"] == "product-marketing"
+    router = next(specialist for specialist in payload["specialists"] if specialist["id"] == "marketing_skill_router")
+    assert {skill["id"] for skill in router["marketing_skills"]} >= {"product-marketing", "ad-creative"}
     plan_phase = next(phase for phase in payload["phases"] if phase["id"] == "plan")
     assert {specialist["id"] for specialist in plan_phase["specialists"]} >= {"ugc_video_scenarios", "static_ad_concepts"}
     assert payload["current_phase"] == "brief"
+
+
+def test_marketing_skills_endpoint_exposes_corey_catalog(monkeypatch, tmp_path):
+    _configure_tmp_dirs(monkeypatch, tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/marketing-skills")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "coreyhaines31/marketingskills"
+    assert payload["foundation_skill"]["id"] == "product-marketing"
+    assert {"ads", "ad-creative", "image", "video"} <= {skill["id"] for skill in payload["skills"]}
 
 
 def test_avatar_upload_returns_local_preview_without_inheriting_default_url(monkeypatch, tmp_path):
@@ -654,6 +670,16 @@ def test_generate_minimal_skips_video_without_api_key(monkeypatch, tmp_path):
     assert payload["ugc_strategy"]["ugc_prompt_skill"]["source"] == "local skill/claude-arcads creative rules; Arcads API ignored"
     assert payload["ugc_strategy"]["ugc_prompt_skill"]["arcads_api"] == "not used by this app"
     assert payload["ugc_strategy"]["category_video_recipe"]["ugc_template"]
+    assert payload["marketing_skill_plan"]["foundation_context"]["source_skill"]["id"] == "product-marketing"
+    assert {
+        skill["id"]
+        for skill in payload["ugc_strategy"]["applied_marketing_skills"]["ugc_video_scenarios"]["skills"]
+    } >= {"ad-creative", "video", "marketing-psychology"}
+    assert {
+        skill["id"]
+        for skill in payload["ads_creative_set"]["applied_marketing_skills"]["static_ad_concepts"]["skills"]
+    } >= {"ad-creative", "image", "marketing-psychology"}
+    assert payload["prompt_audit"]["prompt_graph"]["marketing_skill_router"]["selected_skills"]
     assert payload["ads_creative_set"]["carousel_ad"]["card_count"] == 5
     assert payload["ads_creative_set"]["static_creative_director"]["version"] == "static_creative_director_v4"
     assert payload["ads_creative_set"]["static_creative_director"]["quality_contract_version"] == "static_creative_quality_v1"

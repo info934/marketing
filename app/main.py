@@ -47,6 +47,7 @@ from app.services import (
     emotional_angle_engine,
     finance_video_agent,
     generation_run_repository,
+    marketing_skill_router,
     openrouter_seedance_client,
     openrouter_image_client,
     openrouter_prompt_client,
@@ -138,6 +139,11 @@ def get_performance_memory() -> dict[str, Any]:
 def orchestrator() -> dict[str, Any]:
     latest_run = generation_run_repository.latest_run()
     return creative_orchestrator.snapshot(latest_run)
+
+
+@app.get("/marketing-skills")
+def marketing_skills() -> dict[str, Any]:
+    return marketing_skill_router.registry()
 
 
 @app.get("/companies")
@@ -1539,6 +1545,29 @@ def _run_strategy_phase(
         ugc_strategy["ad_angle_multiplier"] = angle_multiplier
         ugc_strategy["ad_angle_selector"] = angle_selector
     ugc_strategy["creative_memory_rag"] = creative_memory_guidance
+    marketing_skill_plan = marketing_skill_router.build_mission_plan(
+        product_analysis=product_analysis,
+        settings=settings,
+        ugc_strategy=ugc_strategy,
+    )
+    settings["marketing_skill_plan"] = marketing_skill_plan
+    input_data["marketing_skill_plan"] = marketing_skill_router.compact_plan(marketing_skill_plan)
+    product_analysis["product_marketing_context"] = marketing_skill_plan.get("foundation_context") or {}
+    ugc_strategy["marketing_skill_plan"] = marketing_skill_router.compact_plan(marketing_skill_plan)
+    ugc_strategy["applied_marketing_skills"] = {
+        "ugc_video_scenarios": marketing_skill_router.route_for_specialist(
+            marketing_skill_plan,
+            "ugc_video_scenarios",
+        ),
+        "hook_strategy": marketing_skill_router.route_for_specialist(
+            marketing_skill_plan,
+            "hook_strategy",
+        ),
+        "audience_strategy": marketing_skill_router.route_for_specialist(
+            marketing_skill_plan,
+            "audience_strategy",
+        ),
+    }
 
     return {
         "ugc_strategy": ugc_strategy,
@@ -1602,6 +1631,9 @@ def _run_creative_plan_phase(
         ugc_strategy=ugc_strategy,
         settings=settings,
     )
+    content_prompt_package["marketing_skill_plan"] = marketing_skill_router.compact_plan(
+        settings.get("marketing_skill_plan") or ugc_strategy.get("marketing_skill_plan") or {}
+    )
     content_prompt_package["creative_memory_guidance"] = creative_memory_guidance
     content_prompt_package["prompt_graph"] = prompt_graph_service.build_prompt_graph(
         product_analysis=product_analysis,
@@ -1657,6 +1689,9 @@ def _run_creative_plan_phase(
         )
 
     content_prompt_package["creative_memory_guidance"] = creative_memory_guidance
+    content_prompt_package["marketing_skill_plan"] = marketing_skill_router.compact_plan(
+        settings.get("marketing_skill_plan") or ugc_strategy.get("marketing_skill_plan") or {}
+    )
     content_prompt_package["prompt_graph"] = prompt_graph_service.build_prompt_graph(
         product_analysis=product_analysis,
         ugc_strategy=ugc_strategy,
@@ -3274,6 +3309,12 @@ def build_final_output(
         "finance_script_agent": input_data.get("finance_script_agent") or {},
         "avatar": avatar,
         "product_analysis": product_analysis,
+        "marketing_skill_plan": (
+            ugc_strategy.get("marketing_skill_plan")
+            or ads_creative_set.get("marketing_skill_plan")
+            or content_prompt_package.get("marketing_skill_plan")
+            or {}
+        ),
         "ugc_strategy": ugc_strategy,
         "content_prompt_package": safe_content_prompt_package,
         "product_fidelity_result": product_fidelity_result,

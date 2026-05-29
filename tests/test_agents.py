@@ -8,6 +8,7 @@ from app.services import (
     compliance_guard,
     competitor_strategy_agent,
     content_prompt_engineer_agent,
+    marketing_skill_router,
     product_fidelity_guard,
     prompt_defaults,
     product_intake_agent,
@@ -16,6 +17,52 @@ from app.services import (
     structured_prompt_v2,
     ugc_agent,
 )
+
+
+def test_marketing_skill_router_builds_product_context_and_routes():
+    product_analysis = {
+        "product_name": "The Roomiest Bum Bag",
+        "likely_product_category": "handbag",
+        "ad_safe_detail_phrases": ["roomy shape", "zip detail"],
+        "unsupported_claims": ["best seller"],
+    }
+    settings = {
+        "app_mode": "ecommerce",
+        "generation_mode": "both",
+        "platform": "meta",
+        "market": "UK",
+        "language": "en",
+        "ad_vertical": "fashion_ecommerce",
+        "company_profile": {
+            "company_id": "kimlondon",
+            "company_name": "Kimlondon",
+            "business_model": "dropshipping",
+            "audience": "UK shoppers looking for practical fashion accessories.",
+            "positioning": "Honest everyday product proof.",
+            "brand_voice": "low-hype British English",
+            "proof_points": ["visible scale"],
+            "forbidden_claims": ["fake discounts"],
+        },
+    }
+
+    plan = marketing_skill_router.build_mission_plan(
+        product_analysis=product_analysis,
+        settings=settings,
+        ugc_strategy={"platform": "meta"},
+    )
+
+    selected_ids = {skill["id"] for skill in plan["selected_skills"]}
+    static_ids = {
+        skill["id"]
+        for skill in plan["specialist_routes"]["static_ad_concepts"]["skills"]
+    }
+
+    assert plan["foundation_context"]["source_skill"]["id"] == "product-marketing"
+    assert {"product-marketing", "ads", "ad-creative", "image", "video"} <= selected_ids
+    assert {"ad-creative", "image", "marketing-psychology"} <= static_ids
+    assert plan["generation_gate"]["bad_or_unapproved_plan_action"] == "block_generation"
+    assert "audience" in plan["foundation_context"]["covered_sections"]
+    assert marketing_skill_router.compact_plan(plan)["selected_skills"]
 
 
 def test_agents_return_safe_shapes_for_minimal_input(tmp_path):

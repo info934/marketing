@@ -205,6 +205,8 @@ def _remove_instructional_treat_language(text: str) -> str:
     patterns = [
         r"\bdo\s+not\s+treat\b[^.{}\"']{0,220}",
         r"\bnever\s+treat\b[^.{}\"']{0,220}",
+        r"\btreat\s+(?:planned\s+)?on_screen_text\b[^.{}\"']{0,220}",
+        r"\btreat\s+competitor\s+inputs\b[^.{}\"']{0,220}",
         r"\btreat\s+(?:product_info|internal_brief_notes|product\s+names?|colou?rs?|garment\s+specifics|object|room|clothing\s+detail|prop|reference|image|note|this|that|it|them)\b[^.{}\"']{0,220}",
         r"\btreat\s+[^.{}\"']{0,120}\s+as\s+(?:internal|examples?|product-only|guidance|source\s+of\s+truth)\b[^.{}\"']{0,160}",
     ]

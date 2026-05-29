@@ -20,6 +20,7 @@ def build(final_output: dict[str, Any]) -> dict[str, Any]:
     self_critique = final_output.get("self_critique") or {}
     post_qa = final_output.get("post_generation_qa") or {}
     creative_memory = final_output.get("creative_memory") or {}
+    marketing_skill_plan = final_output.get("marketing_skill_plan") or {}
     seedance_payload = final_output.get("seedance_payload") or prompts.get("seedance_payload") or {}
 
     blocking_reasons = _blocking_reasons(
@@ -86,6 +87,14 @@ def build(final_output: dict[str, Any]) -> dict[str, Any]:
             "creative_count": creative_memory.get("creative_count"),
             "rag_guidance": creative_memory.get("rag_guidance"),
         },
+        "marketing_skill_plan": {
+            "version": marketing_skill_plan.get("version"),
+            "source": marketing_skill_plan.get("source"),
+            "foundation_context": marketing_skill_plan.get("foundation_context") or {},
+            "selected_skills": marketing_skill_plan.get("selected_skills") or [],
+            "generation_gate": marketing_skill_plan.get("generation_gate") or {},
+            "creative_quality_contract": marketing_skill_plan.get("creative_quality_contract") or {},
+        },
         "prompt_and_payload_map": _prompt_and_payload_map(prompts, static_images, seedance_payload),
         "workflow_stages": _workflow_stages(
             product=product,
@@ -106,6 +115,7 @@ def build(final_output: dict[str, Any]) -> dict[str, Any]:
             {"title": "User input", "key": "user_input", "why_it_matters": "Original request values and UI overrides."},
             {"title": "Avatar", "key": "avatar", "why_it_matters": "Selected or custom own-person identity settings."},
             {"title": "Product analysis", "key": "product_analysis", "why_it_matters": "Safe product facts and risky claim separation."},
+            {"title": "Marketing skill plan", "key": "marketing_skill_plan", "why_it_matters": "Corey Haines marketing skills selected for this mission and their generation gate."},
             {"title": "Creative brain", "key": "ugc_strategy.audience_research", "why_it_matters": "Audience archetype, psychology, hook strategy, scene direction, and memory influence."},
             {"title": "UGC strategy", "key": "ugc_strategy", "why_it_matters": "Hook, scene plan, voiceover, platform adaptation."},
             {"title": "Prompt package", "key": "content_prompt_package", "why_it_matters": "All prompts, structured scenes, and Seedance payload source."},

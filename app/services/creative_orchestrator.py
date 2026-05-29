@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services import marketing_skill_router
+
 
 ORCHESTRATOR_VERSION = "creative_orchestrator_v1"
 
@@ -12,7 +14,7 @@ PHASES: list[dict[str, Any]] = [
         "purpose": "Collect the minimum context needed for a strong ad: brand, subject, audience, avatar, references, and output mode.",
         "user_gate": "The agent asks for missing context instead of guessing major facts.",
         "outputs": ["brand_context", "ad_subject", "reference_assets", "campaign_constraints"],
-        "specialists": ["brief_parser", "brand_context"],
+        "specialists": ["brief_parser", "brand_context", "marketing_skill_router"],
     },
     {
         "id": "strategy",
@@ -49,6 +51,14 @@ PHASES: list[dict[str, Any]] = [
 ]
 
 SPECIALISTS: list[dict[str, Any]] = [
+    {
+        "id": "marketing_skill_router",
+        "label": "Marketing Skill Router",
+        "phase": "brief",
+        "role": "Selects the relevant Corey Haines marketing skills and keeps product-marketing context as the foundation.",
+        "modules": ["marketing_skill_router", "company_loader"],
+        "visible": True,
+    },
     {
         "id": "brief_parser",
         "label": "Brief Parser",
@@ -160,15 +170,17 @@ def schema() -> dict[str, Any]:
     return {
         "version": ORCHESTRATOR_VERSION,
         "name": "AI Creative Orchestrator",
+        "marketing_skill_registry": marketing_skill_router.registry(),
         "principles": [
             "one visible pipeline, many internal specialist skills",
+            "product-marketing context before specialist creative skills",
             "plan before generate",
             "block weak or misaligned generation instead of spending credits",
             "separate UGC video scenario skills from static ad concept skills",
             "review and learn after every run",
         ],
         "phases": PHASES,
-        "specialists": SPECIALISTS,
+        "specialists": [_with_skill_route(specialist) for specialist in SPECIALISTS],
     }
 
 
@@ -184,7 +196,7 @@ def snapshot(run: dict[str, Any] | None = None) -> dict[str, Any]:
                 **phase,
                 "status": _phase_status(phase_id, current_phase, terminal_status, blocked),
                 "specialists": [
-                    specialist
+                    _with_skill_route(specialist)
                     for specialist in SPECIALISTS
                     if specialist.get("phase") == phase_id and specialist.get("visible")
                 ],
@@ -216,6 +228,15 @@ def _current_phase(run: dict[str, Any] | None) -> str:
     if stage in {"submitted", "started", "product_intake", "provider_preflight"}:
         return "brief"
     return "brief"
+
+
+def _with_skill_route(specialist: dict[str, Any]) -> dict[str, Any]:
+    route = marketing_skill_router.route_for_specialist(str(specialist.get("id") or ""))
+    return {
+        **specialist,
+        "marketing_skills": route.get("skills") or [],
+        "skill_contract": route.get("contract"),
+    }
 
 
 def _phase_status(phase_id: str, current_phase: str, terminal_status: str, blocked: bool) -> str:

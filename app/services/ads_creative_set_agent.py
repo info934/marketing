@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services import ad_angle_multiplier, ad_angle_selector, prompt_defaults, scenario_contract
+from app.services import (
+    ad_angle_multiplier,
+    ad_angle_selector,
+    marketing_skill_router,
+    prompt_defaults,
+    scenario_contract,
+)
 from app.services.localization_utils import (
     is_czech as _is_czech_language,
     is_german,
@@ -66,6 +72,7 @@ def generate_ad_set(
     static_subject_lock = _static_subject_lock(settings, ugc_strategy, content_prompt_package, avatar)
     static_scenario_contract_lock = scenario_contract.static_prompt_lock(user_scenario_contract)
     competitor_strategy = ugc_strategy.get("competitor_strategy") or settings.get("competitor_strategy") or {}
+    marketing_skill_plan = settings.get("marketing_skill_plan") or ugc_strategy.get("marketing_skill_plan") or {}
     angle_multiplier = (
         settings.get("ad_angle_multiplier")
         or ugc_strategy.get("ad_angle_multiplier")
@@ -146,6 +153,21 @@ def generate_ad_set(
         "static_subject_lock": static_subject_lock,
         "brand_ads_context": settings.get("company_profile") or product_analysis.get("company_profile") or {},
         "brand_ads_context_directive": brand_context,
+        "marketing_skill_plan": marketing_skill_router.compact_plan(marketing_skill_plan),
+        "applied_marketing_skills": {
+            "paid_ads_strategy": marketing_skill_router.route_for_specialist(
+                marketing_skill_plan,
+                "hook_strategy",
+            ),
+            "static_ad_concepts": marketing_skill_router.route_for_specialist(
+                marketing_skill_plan,
+                "static_ad_concepts",
+            ),
+            "static_image_generation": marketing_skill_router.route_for_specialist(
+                marketing_skill_plan,
+                "static_image_generator",
+            ),
+        },
         "static_creative_quality_system": _static_creative_quality_system(),
         "marketing_skill_applied": {
             "source": "coreyhaines31/marketingskills skills/ad-creative",

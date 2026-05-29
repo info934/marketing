@@ -381,6 +381,7 @@ def _compact_final_output(final_output: dict[str, Any]) -> dict[str, Any]:
         "final_export_status": final_output.get("final_export_status"),
         "user_input": final_output.get("user_input"),
         "creative_plan_preview": final_output.get("creative_plan_preview"),
+        "marketing_skill_plan": final_output.get("marketing_skill_plan") or {},
         "ads_creative_set": _compact_ads_creative_set(final_output.get("ads_creative_set") or {}),
         "video_generation": final_output.get("video_generation"),
         "static_image_generation": _compact_static_image_generation(
@@ -407,6 +408,8 @@ def _compact_ads_creative_set(ad_set: dict[str, Any]) -> dict[str, Any]:
         "static_prompt_generation": ad_set.get("static_prompt_generation") or {},
         "prompt_learning_directive": ad_set.get("prompt_learning_directive"),
         "static_creative_director": ad_set.get("static_creative_director") or {},
+        "marketing_skill_plan": ad_set.get("marketing_skill_plan") or {},
+        "applied_marketing_skills": ad_set.get("applied_marketing_skills") or {},
     }
 
 

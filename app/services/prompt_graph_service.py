@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services import marketing_skill_router
+
 
 def build_prompt_graph(
     *,
@@ -22,6 +24,12 @@ def build_prompt_graph(
     angle_selector = ugc_strategy.get("ad_angle_selector") or settings.get("ad_angle_selector") or {}
     competitor_strategy = ugc_strategy.get("competitor_strategy") or settings.get("competitor_strategy") or {}
     environment_control = content_prompt_package.get("environment_control") or {}
+    marketing_skill_plan = (
+        content_prompt_package.get("marketing_skill_plan")
+        or ugc_strategy.get("marketing_skill_plan")
+        or settings.get("marketing_skill_plan")
+        or {}
+    )
     return {
         "version": "prompt_graph_v1",
         "source_of_truth": "structured blocks compiled into provider prompts",
@@ -89,6 +97,7 @@ def build_prompt_graph(
             "originality_guard": competitor_strategy.get("originality_guard") or {},
             "rule": "Use competitor input as temporary strategic context only, never as copy or direct visual reference.",
         },
+        "marketing_skill_router": marketing_skill_router.compact_plan(marketing_skill_plan),
         "ad_angle_multiplier": {
             "version": angle_multiplier.get("version"),
             "skill_source": angle_multiplier.get("skill_source"),
