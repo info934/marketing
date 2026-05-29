@@ -1,4 +1,4 @@
-import type { Avatar, CampaignForm, ChatItem, Company, Creative, IntelligenceSummary, LearningSnapshot, ParserResult, PromptSettings } from "@/lib/types";
+import type { Avatar, CampaignForm, ChatItem, Company, Creative, IntelligenceSummary, LearningSnapshot, OrchestratorSnapshot, ParserResult, PromptSettings } from "@/lib/types";
 
 export async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options);
@@ -57,6 +57,10 @@ export async function getAvatars() {
 
 export async function getCompanies() {
   return apiJson<{ companies: Company[]; default_company_id?: string }>("/api/backend/companies");
+}
+
+export async function getOrchestrator() {
+  return apiJson<OrchestratorSnapshot>("/api/backend/orchestrator");
 }
 
 export async function saveCompany(profile: Partial<Company> & { id?: string }) {

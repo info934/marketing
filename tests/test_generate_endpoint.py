@@ -45,6 +45,23 @@ def test_planning_watchdog_uses_fallback_on_timeout():
     assert result == {"status": "fallback"}
 
 
+def test_orchestrator_exposes_simple_pipeline_and_specialist_skills(monkeypatch, tmp_path):
+    _configure_tmp_dirs(monkeypatch, tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/orchestrator")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["version"] == "creative_orchestrator_v1"
+    assert [phase["id"] for phase in payload["phases"]] == ["brief", "strategy", "plan", "generate", "review"]
+    specialist_ids = {specialist["id"] for specialist in payload["specialists"]}
+    assert {"ugc_video_scenarios", "static_ad_concepts", "scenario_integrity"} <= specialist_ids
+    plan_phase = next(phase for phase in payload["phases"] if phase["id"] == "plan")
+    assert {specialist["id"] for specialist in plan_phase["specialists"]} >= {"ugc_video_scenarios", "static_ad_concepts"}
+    assert payload["current_phase"] == "brief"
+
+
 def test_avatar_upload_returns_local_preview_without_inheriting_default_url(monkeypatch, tmp_path):
     _configure_tmp_dirs(monkeypatch, tmp_path)
     monkeypatch.setattr(config, "AVATAR_DATA_PATH", tmp_path / "avatars.json")

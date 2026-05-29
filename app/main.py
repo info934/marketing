@@ -37,6 +37,7 @@ from app.services import (
     compliance_guard,
     competitor_strategy_agent,
     content_prompt_engineer_agent,
+    creative_orchestrator,
     cost_tracker,
     creative_memory_db,
     creative_memory_learning_service,
@@ -131,6 +132,12 @@ def prompt_settings() -> dict[str, Any]:
 @app.get("/performance-memory")
 def get_performance_memory() -> dict[str, Any]:
     return performance_memory.load_memory()
+
+
+@app.get("/orchestrator")
+def orchestrator() -> dict[str, Any]:
+    latest_run = generation_run_repository.latest_run()
+    return creative_orchestrator.snapshot(latest_run)
 
 
 @app.get("/companies")

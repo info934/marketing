@@ -73,6 +73,37 @@ export type Company = {
   is_default?: boolean;
 };
 
+export type OrchestratorSpecialist = {
+  id: string;
+  label: string;
+  phase: string;
+  role: string;
+  modules?: string[];
+  visible?: boolean;
+};
+
+export type OrchestratorPhase = {
+  id: string;
+  title: string;
+  purpose: string;
+  user_gate?: string;
+  outputs?: string[];
+  specialists?: OrchestratorSpecialist[];
+  status?: "done" | "active" | "blocked" | "waiting" | string;
+};
+
+export type OrchestratorSnapshot = {
+  version: string;
+  name: string;
+  principles: string[];
+  phases: OrchestratorPhase[];
+  specialists: OrchestratorSpecialist[];
+  current_phase: string;
+  run_id?: string;
+  run_status: string;
+  next_action: string;
+};
+
 export type Avatar = {
   id: string;
   name?: string;

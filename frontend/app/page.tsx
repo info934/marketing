@@ -57,6 +57,7 @@ import {
   getGenerationRuns,
   getLatestRun,
   getLearningSnapshot,
+  getOrchestrator,
   getPromptSettings,
   getProviderCapabilities,
   makeDefaultAvatar,
@@ -77,6 +78,7 @@ import type {
   Creative,
   IntelligenceSummary,
   LearningSnapshot,
+  OrchestratorSnapshot,
   ParserResult,
   PromptSettings,
 } from "@/lib/types";
@@ -767,6 +769,7 @@ export default function CreativeOsApp() {
   const [promptSettings, setPromptSettings] = useState<PromptSettings | null>(null);
   const [intelligence, setIntelligence] = useState<IntelligenceSummary | null>(null);
   const [learning, setLearning] = useState<LearningSnapshot | null>(null);
+  const [orchestrator, setOrchestrator] = useState<OrchestratorSnapshot | null>(null);
   const [providerCapabilities, setProviderCapabilities] = useState<Record<string, unknown> | null>(null);
   const [items, setItems] = useState<ChatItem[]>(() => [createIntroItem()]);
   const [scenarioDrafts, setScenarioDrafts] = useState<ScenarioDraft[]>([]);
@@ -828,6 +831,9 @@ export default function CreativeOsApp() {
       setGenerationRuns((current) => mergeRunList(current, run));
       setLastRunPollAt(new Date().toLocaleTimeString());
       setRunPollError("");
+      getOrchestrator()
+        .then(setOrchestrator)
+        .catch(() => undefined);
       if (announce) setDataStatus("Latest run aktualizovan.");
       return run;
     } catch (error) {
@@ -841,7 +847,7 @@ export default function CreativeOsApp() {
   const refreshAll = useCallback(async () => {
     setDataBusy(true);
     setDataStatus("Synchronizuji workflow data...");
-    const [companyResult, avatarResult, creativeResult, latestResult, runListResult, promptResult, intelligenceResult, learningResult, providerResult] =
+    const [companyResult, avatarResult, creativeResult, latestResult, runListResult, promptResult, intelligenceResult, learningResult, orchestratorResult, providerResult] =
       await Promise.allSettled([
         getCompanies(),
         getAvatars(),
@@ -851,6 +857,7 @@ export default function CreativeOsApp() {
         getPromptSettings(),
         getCreativeIntelligence(),
         getLearningSnapshot(),
+        getOrchestrator(),
         getProviderCapabilities(),
       ]);
 
@@ -880,9 +887,10 @@ export default function CreativeOsApp() {
     if (promptResult.status === "fulfilled") setPromptSettings(promptResult.value);
     if (intelligenceResult.status === "fulfilled") setIntelligence(intelligenceResult.value);
     if (learningResult.status === "fulfilled") setLearning(learningResult.value);
+    if (orchestratorResult.status === "fulfilled") setOrchestrator(orchestratorResult.value);
     if (providerResult.status === "fulfilled") setProviderCapabilities(providerResult.value);
 
-    const failed = [companyResult, avatarResult, creativeResult, latestResult, runListResult, promptResult, intelligenceResult, learningResult, providerResult].filter(
+    const failed = [companyResult, avatarResult, creativeResult, latestResult, runListResult, promptResult, intelligenceResult, learningResult, orchestratorResult, providerResult].filter(
       (item) => item.status === "rejected",
     ).length;
     setDataStatus(failed ? `Nacteno, ${failed} endpointu selhalo.` : "Data synchronizovana.");
@@ -1151,6 +1159,11 @@ export default function CreativeOsApp() {
     if (!form.product_info && !form.product_reference_url && !productFile && staticProductFiles.length === 0) {
       setStatus("Dopln ad brief, URL nebo obrazek.");
       selectView("chat");
+      return;
+    }
+    if (!approvedScenarioId && !form.ugc_video_extra_prompt.trim()) {
+      setStatus("Nejdriv priprav a schval Creative Plan. Spoustim navrh scenaru.");
+      createScenarioDrafts();
       return;
     }
     if (form.generation_mode !== "static" && !isVideoReadyProductReference(form.product_reference_url)) {
@@ -1554,6 +1567,7 @@ export default function CreativeOsApp() {
               status={status}
               busy={busy}
               activeCompany={activeCompany}
+              orchestrator={orchestrator}
               fileInputRef={fileInputRef}
               setDraft={setDraft}
               setPendingFiles={setPendingFiles}
@@ -1661,6 +1675,7 @@ export default function CreativeOsApp() {
               runPollError={runPollError}
               scenarioDrafts={scenarioDrafts}
               approvedScenarioId={approvedScenarioId}
+              orchestrator={orchestrator}
               createScenarioDrafts={createScenarioDrafts}
               approveScenario={approveScenario}
               generate={generate}
@@ -1743,6 +1758,7 @@ function AgentCockpit(props: {
   status: string;
   busy: boolean;
   activeCompany?: Company;
+  orchestrator: OrchestratorSnapshot | null;
   productFile: File | null;
   staticProductFiles: File[];
   scenarioDrafts: ScenarioDraft[];
@@ -1751,10 +1767,15 @@ function AgentCockpit(props: {
   const hasBrief = Boolean(props.form.product_info || props.form.product_reference_url || props.productFile || props.staticProductFiles.length);
   const hasBrand = Boolean(props.form.company_id || props.form.brand_context);
   const hasReference = props.form.generation_mode === "static" || isVideoReadyProductReference(props.form.product_reference_url);
-  const hasApprovedScenario = Boolean(props.approvedScenarioId);
+  const hasApprovedScenario = Boolean(props.approvedScenarioId || props.form.ugc_video_extra_prompt.trim());
   const statusLabel = props.busy ? "Working" : hasApprovedScenario ? "Ready" : props.scenarioDrafts.length ? "Review" : hasBrief ? "Planning" : "Listening";
   const mission = props.form.product_name || firstLine(props.form.product_info) || "New ads mission";
-  const steps = agentCockpitSteps({ hasBrief, hasBrand, hasReference, scenarioCount: props.scenarioDrafts.length, hasApprovedScenario, busy: props.busy });
+  const activeOrchestrator = isActionableOrchestrator(props.orchestrator) ? props.orchestrator : null;
+  const steps =
+    orchestratorWorkflowSteps(activeOrchestrator) ||
+    agentCockpitSteps({ hasBrief, hasBrand, hasReference, scenarioCount: props.scenarioDrafts.length, hasApprovedScenario, busy: props.busy });
+  const planSpecialists = props.orchestrator?.phases.find((phase) => phase.id === "plan")?.specialists || [];
+  const visiblePlanSkills = planSpecialists.map((specialist) => specialist.label).slice(0, 3).join(" + ") || "UGC + static skills";
 
   return (
     <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
@@ -1768,7 +1789,7 @@ function AgentCockpit(props: {
                 {props.activeCompany?.name && <Badge variant="outline">{props.activeCompany.name}</Badge>}
               </div>
               <CardTitle className="text-xl">{mission}</CardTitle>
-              <CardDescription className="mt-1 line-clamp-2">{props.status}</CardDescription>
+              <CardDescription className="mt-1 line-clamp-2">{activeOrchestrator?.next_action || props.status}</CardDescription>
             </div>
             <div className="grid min-w-[176px] grid-cols-2 gap-2 text-xs">
               <AgentMetric label="Output" value={modeLabel(props.form.generation_mode)} />
@@ -1792,7 +1813,7 @@ function AgentCockpit(props: {
           </div>
           <div className="grid gap-2 md:grid-cols-3">
             <AgentSignal icon={<ShieldCheck className="h-4 w-4" />} label="Quality guard" value={hasBrand ? "Brand rules loaded" : "Waiting"} />
-            <AgentSignal icon={<GitBranch className="h-4 w-4" />} label="Creative route" value={hasApprovedScenario ? "Scenario approved" : "Needs scenario"} />
+            <AgentSignal icon={<GitBranch className="h-4 w-4" />} label="Specialists" value={visiblePlanSkills} />
             <AgentSignal icon={<Images className="h-4 w-4" />} label="Assets" value={`${props.staticProductFiles.length + (props.productFile ? 1 : 0)} refs`} />
           </div>
         </CardContent>
@@ -1894,30 +1915,52 @@ function agentCockpitSteps(input: {
       state: input.hasBrief ? "done" : "active",
     },
     {
-      id: "brand",
-      title: "Brand",
-      detail: input.hasBrand ? "Voice and rules ready" : "Add brand context",
-      state: input.hasBrand ? "done" : input.hasBrief ? "active" : "waiting",
+      id: "strategy",
+      title: "Strategy",
+      detail: input.hasBrand && input.hasBrief ? "Angle and claim boundaries ready" : "Needs brand and mission context",
+      state: input.hasBrand && input.hasBrief ? "done" : input.hasBrief ? "active" : "waiting",
     },
     {
-      id: "reference",
-      title: "Reference",
-      detail: input.hasReference ? "Provider-ready visual" : "Needs direct URL",
-      state: input.hasReference ? "done" : input.hasBrief ? "blocked" : "waiting",
-    },
-    {
-      id: "scenario",
-      title: "Scenario",
-      detail: input.hasApprovedScenario ? "Approved direction" : input.scenarioCount ? `${input.scenarioCount} variants` : "Not drafted",
+      id: "plan",
+      title: "Creative Plan",
+      detail: input.hasApprovedScenario ? "Approved direction" : input.scenarioCount ? `${input.scenarioCount} variants` : "UGC and static concepts not drafted",
       state: input.hasApprovedScenario ? "done" : input.scenarioCount ? "active" : input.hasBrief ? "waiting" : "waiting",
     },
     {
-      id: "create",
-      title: "Create",
-      detail: input.busy ? "Generating assets" : "Ready when approved",
-      state: input.busy ? "active" : input.hasApprovedScenario && input.hasReference ? "done" : "waiting",
+      id: "generate",
+      title: "Generate",
+      detail: input.busy ? "Generating assets" : input.hasReference ? "Provider-ready" : "Needs direct visual URL",
+      state: input.busy ? "active" : input.hasReference ? (input.hasApprovedScenario ? "active" : "waiting") : input.hasBrief ? "blocked" : "waiting",
+    },
+    {
+      id: "review",
+      title: "Review",
+      detail: "Quality review and learning after generation",
+      state: "waiting",
     },
   ];
+}
+
+function orchestratorWorkflowSteps(orchestrator: OrchestratorSnapshot | null): ChatWorkflowStep[] | null {
+  if (!orchestrator?.phases?.length) return null;
+  if (!isActionableOrchestrator(orchestrator)) return null;
+  return orchestrator.phases.map((phase) => ({
+    id: phase.id,
+    title: phase.title,
+    detail: phase.purpose || phase.user_gate || "",
+    state: normalizeStepState(phase.status),
+    meta: (phase.specialists || []).map((specialist) => specialist.label).slice(0, 2).join(" + "),
+  }));
+}
+
+function isActionableOrchestrator(orchestrator: OrchestratorSnapshot | null): orchestrator is OrchestratorSnapshot {
+  if (!orchestrator) return false;
+  return !["idle", "completed"].includes(String(orchestrator.run_status || "").toLowerCase());
+}
+
+function normalizeStepState(value: string | undefined): ChatWorkflowStepState {
+  if (value === "done" || value === "active" || value === "blocked" || value === "waiting") return value;
+  return "waiting";
 }
 
 function agentStepClass(state: ChatWorkflowStepState) {
@@ -1949,6 +1992,7 @@ function ChatWorkspace(props: {
   status: string;
   busy: boolean;
   activeCompany?: Company;
+  orchestrator: OrchestratorSnapshot | null;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   setDraft: (value: string) => void;
   setPendingFiles: React.Dispatch<React.SetStateAction<File[]>>;
@@ -1988,6 +2032,7 @@ function ChatWorkspace(props: {
             status={props.status}
             busy={props.busy}
             activeCompany={props.activeCompany}
+            orchestrator={props.orchestrator}
             productFile={props.productFile}
             staticProductFiles={props.staticProductFiles}
             scenarioDrafts={props.scenarioDrafts}
@@ -2240,8 +2285,9 @@ function ChatWorkflowCard(props: {
   compact?: boolean;
 }) {
   const approvedScenario = props.scenarioDrafts.find((scenario) => scenario.id === props.approvedScenarioId);
+  const hasApprovedPlan = Boolean(approvedScenario || props.form.ugc_video_extra_prompt.trim());
   const hasScenarioDrafts = props.scenarioDrafts.length > 0;
-  const generateDisabled = props.busy || (hasScenarioDrafts && !approvedScenario);
+  const generateDisabled = props.busy || !hasApprovedPlan;
   const outputLabel = modeLabel(props.form.generation_mode);
 
   return (
@@ -4182,6 +4228,7 @@ function CampaignPanel(props: {
   runPollError: string;
   scenarioDrafts: ScenarioDraft[];
   approvedScenarioId: string;
+  orchestrator: OrchestratorSnapshot | null;
   createScenarioDrafts: () => void;
   approveScenario: (draftId: string) => void;
   generate: () => void;
@@ -4191,8 +4238,10 @@ function CampaignPanel(props: {
 }) {
   const localProductVideoRisk = props.form.generation_mode !== "static" && !isVideoReadyProductReference(props.form.product_reference_url);
   const workflowSteps = useMemo(
-    () => chatWorkflowSteps(props.form, props.productFile, props.staticProductFiles, props.scenarioDrafts, props.approvedScenarioId),
-    [props.form, props.productFile, props.staticProductFiles, props.scenarioDrafts, props.approvedScenarioId],
+    () =>
+      orchestratorWorkflowSteps(props.orchestrator) ||
+      chatWorkflowSteps(props.form, props.productFile, props.staticProductFiles, props.scenarioDrafts, props.approvedScenarioId),
+    [props.orchestrator, props.form, props.productFile, props.staticProductFiles, props.scenarioDrafts, props.approvedScenarioId],
   );
 
   return (
@@ -5569,47 +5618,49 @@ function chatWorkflowSteps(
   approvedScenarioId: string,
 ): ChatWorkflowStep[] {
   const hasProduct = Boolean(form.product_info || form.product_reference_url || productFile || staticProductFiles.length);
+  const hasBrand = Boolean(form.company_id || form.brand_context);
   const videoMode = form.generation_mode !== "static";
   const productReferenceReady = !videoMode || isVideoReadyProductReference(form.product_reference_url);
   const hasScenarioDrafts = scenarioDrafts.length > 0;
   const hasApprovedScenario = Boolean(approvedScenarioId && scenarioDrafts.some((scenario) => scenario.id === approvedScenarioId));
-  const readyToGenerate = hasProduct && productReferenceReady && form.avatar_own_person_consent && (!hasScenarioDrafts || hasApprovedScenario);
+  const hasApprovedPlan = Boolean(hasApprovedScenario || form.ugc_video_extra_prompt.trim());
+  const readyToGenerate = hasProduct && productReferenceReady && form.avatar_own_person_consent && hasApprovedPlan;
 
   return [
     {
       id: "brief",
       title: "Brief",
-      detail: hasProduct ? "Ad brief je pripraveny pro workflow." : "Ceka na text reklamy, URL nebo obrazek.",
-      state: hasProduct ? "done" : "active",
-      meta: form.product_name || form.product_category || "",
+      detail: hasProduct && hasBrand ? "Brand a zadani reklamy jsou pripraveny." : "Ceka na text reklamy, brand, URL nebo obrazek.",
+      state: hasProduct && hasBrand ? "done" : "active",
+      meta: form.product_name || form.company_id || "",
     },
     {
-      id: "reference",
-      title: "Reference",
-      detail: productReferenceReady ? "Reference odpovida zvolenemu vystupu." : "Video potrebuje public direct visual URL.",
-      state: productReferenceReady ? "done" : hasProduct ? "blocked" : "waiting",
-      meta: videoMode ? "video fidelity" : "static only",
+      id: "strategy",
+      title: "Strategy",
+      detail: hasProduct && hasBrand ? "Orchestrator muze vybrat angle, hook a claim hranice." : "Nejdriv brief a brand.",
+      state: hasProduct && hasBrand ? "done" : hasProduct ? "active" : "waiting",
+      meta: form.platform || "",
     },
     {
-      id: "avatar",
-      title: "Avatar",
-      detail: form.avatar_own_person_consent ? "Avatar je autorizovany." : "Pred generovanim potvrdit souhlas avatara.",
-      state: form.avatar_own_person_consent ? "done" : "blocked",
-      meta: form.avatar_id || "",
+      id: "plan",
+      title: "Creative Plan",
+      detail: hasApprovedPlan ? "Creative plan je propsany do rezie." : hasScenarioDrafts ? "Vyber jednu variantu." : "Priprav UGC scenare a staticke koncepty.",
+      state: hasApprovedPlan ? "done" : hasScenarioDrafts ? "active" : hasProduct ? "waiting" : "waiting",
+      meta: hasScenarioDrafts ? `${scenarioDrafts.length} varianty` : "UGC + static",
     },
     {
-      id: "scenario",
-      title: "Scenar",
-      detail: hasApprovedScenario ? "Vybrany scenar je propsany do rezie." : hasScenarioDrafts ? "Vyber jednu variantu." : "Priprav scenare v timeline.",
-      state: hasApprovedScenario ? "done" : hasScenarioDrafts ? "active" : hasProduct ? "waiting" : "waiting",
-      meta: hasScenarioDrafts ? `${scenarioDrafts.length} varianty` : "",
-    },
-    {
-      id: "generation",
-      title: "Run",
-      detail: readyToGenerate ? "Pripraveno spustit novy generation run." : "Dopln blokovane kroky pred odeslanim.",
-      state: readyToGenerate ? "active" : "waiting",
+      id: "generate",
+      title: "Generate",
+      detail: readyToGenerate ? "Pripraveno spustit generation run." : productReferenceReady ? "Ceka na schvaleny plan." : "Video potrebuje public direct visual URL.",
+      state: readyToGenerate ? "active" : productReferenceReady ? "waiting" : hasProduct ? "blocked" : "waiting",
       meta: modeLabel(form.generation_mode),
+    },
+    {
+      id: "review",
+      title: "Review",
+      detail: "Po vystupu prijde kontrola kvality, learning a dalsi krok.",
+      state: "waiting",
+      meta: form.avatar_own_person_consent ? form.avatar_id || "" : "avatar consent",
     },
   ];
 }
