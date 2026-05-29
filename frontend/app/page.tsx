@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   Library,
   Loader2,
+  Mic,
   MessageSquare,
   Move,
   Paperclip,
@@ -32,6 +33,7 @@ import {
   Upload,
   UserRound,
   Video,
+  Volume2,
   Wand2,
   X,
   ZoomIn,
@@ -88,6 +90,7 @@ type CreativeRatingFeedback = {
   comment?: string;
   reasons?: string[];
 };
+type AgentVoiceMode = "idle" | "listening" | "speaking";
 type RejectDraft = {
   open: boolean;
   comment: string;
@@ -628,9 +631,9 @@ const rejectReasonOptions = [
 const navItems = [
   {
     id: "chat",
-    label: "New campaign",
-    description: "Chat brief a generovani",
-    icon: MessageSquare,
+    label: "Orchestrator",
+    description: "AI agent pro ads",
+    icon: Bot,
   },
   {
     id: "dashboard",
@@ -689,8 +692,8 @@ const navItems = [
 
 const viewCopy: Record<AppView, { title: string; subtitle: string }> = {
   chat: {
-    title: "Ads creative chat",
-    subtitle: "Brief kampane, kreativni koncepty a generovani reklam",
+    title: "AI Creative Agent",
+    subtitle: "Orchestrator ridi brief, scenare, kreativy a generovani",
   },
   dashboard: {
     title: "Dashboard",
@@ -923,7 +926,7 @@ export default function CreativeOsApp() {
       const assets = generatedRunAssets(latestRun);
       setChatResultRun(assets.imageCount || assets.videoCount ? latestRun : null);
       setItems((current) => [...current, createAssistantItem(problem.message)]);
-      setStatus("Generovani skoncilo s problemem. Detail je v chatu.");
+      setStatus("Generovani skoncilo s problemem. Detail je v agent timeline.");
       return;
     }
     if (status !== "completed") return;
@@ -934,10 +937,10 @@ export default function CreativeOsApp() {
     setItems((current) => [
       ...current,
       createAssistantItem(
-        `Hotovo. Vysledek aktualniho generovani je pripraveny v chatu: ${assets.videoCount} video / ${assets.imageCount} statik.`,
+        `Hotovo. Vysledek aktualniho generovani je pripraveny v agent timeline: ${assets.videoCount} video / ${assets.imageCount} statik.`,
       ),
     ]);
-    setStatus("Generovani dokonceno. Vysledky jsou v chatu.");
+    setStatus("Generovani dokonceno. Vysledky jsou v agent timeline.");
   }, [activeChatRunId, latestRun, chatCompletionAnnouncedId, chatProblemAnnouncedKey]);
 
   const activeCompany = useMemo(() => companies.find((company) => company.id === form.company_id) || companies[0], [companies, form.company_id]);
@@ -1120,7 +1123,7 @@ export default function CreativeOsApp() {
 
     const drafts = buildChatScenarioDrafts(form, activeAvatar);
     const scenarioMessage = createAssistantItem(
-      `Pripravil jsem ${drafts.length} scenare pro UGC. Vyber jednu variantu primo tady v chatu, po schvaleni se propise do rezie generovani.`,
+      `Pripravil jsem ${drafts.length} scenare pro UGC. Vyber jednu variantu v agent timeline, po schvaleni se propise do rezie generovani.`,
     );
     setScenarioDrafts(drafts);
     setApprovedScenarioId("");
@@ -1141,7 +1144,7 @@ export default function CreativeOsApp() {
       ...current,
       createAssistantItem(`Schvaleno: ${draftToApprove.title}. Tento scenar je zapsany do rezie a pujde do dalsiho generation runu.`),
     ]);
-    setStatus("Scenar schvalen. Ted muzes dat Generate v chatu.");
+    setStatus("Scenar schvalen. Ted muzes dat Generate v orchestratoru.");
   };
 
   const generate = async () => {
@@ -1168,7 +1171,7 @@ export default function CreativeOsApp() {
     setItems((current) => [
       ...current,
       createAssistantItem(
-        `Generovani zacalo. Odhad trvani: ${generationEstimateText(form)}. Vystup vratim sem do tohoto chatu hned po dokonceni.`,
+        `Generovani zacalo. Odhad trvani: ${generationEstimateText(form)}. Vystup vratim do agent timeline hned po dokonceni.`,
       ),
     ]);
     try {
@@ -1237,7 +1240,7 @@ export default function CreativeOsApp() {
     setParserResult(null);
     setRunResult(null);
     setForm((current) => resetCampaignDraftForNewChat(current));
-    setStatus("Novy chat pripraveny pro dalsi generovani.");
+    setStatus("Novy agent run pripraveny pro dalsi generovani.");
     selectView("chat");
   };
 
@@ -1550,6 +1553,7 @@ export default function CreativeOsApp() {
               dragActive={dragActive}
               status={status}
               busy={busy}
+              activeCompany={activeCompany}
               fileInputRef={fileInputRef}
               setDraft={setDraft}
               setPendingFiles={setPendingFiles}
@@ -1734,6 +1738,201 @@ export default function CreativeOsApp() {
   );
 }
 
+function AgentCockpit(props: {
+  form: CampaignForm;
+  status: string;
+  busy: boolean;
+  activeCompany?: Company;
+  productFile: File | null;
+  staticProductFiles: File[];
+  scenarioDrafts: ScenarioDraft[];
+  approvedScenarioId: string;
+}) {
+  const hasBrief = Boolean(props.form.product_info || props.form.product_reference_url || props.productFile || props.staticProductFiles.length);
+  const hasBrand = Boolean(props.form.company_id || props.form.brand_context);
+  const hasReference = props.form.generation_mode === "static" || isVideoReadyProductReference(props.form.product_reference_url);
+  const hasApprovedScenario = Boolean(props.approvedScenarioId);
+  const statusLabel = props.busy ? "Working" : hasApprovedScenario ? "Ready" : props.scenarioDrafts.length ? "Review" : hasBrief ? "Planning" : "Listening";
+  const mission = props.form.product_name || firstLine(props.form.product_info) || "New ads mission";
+  const steps = agentCockpitSteps({ hasBrief, hasBrand, hasReference, scenarioCount: props.scenarioDrafts.length, hasApprovedScenario, busy: props.busy });
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
+      <Card className="overflow-hidden border-emerald-200 bg-white">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">Orchestrator</Badge>
+                <Badge variant={props.busy ? "default" : "outline"}>{statusLabel}</Badge>
+                {props.activeCompany?.name && <Badge variant="outline">{props.activeCompany.name}</Badge>}
+              </div>
+              <CardTitle className="text-xl">{mission}</CardTitle>
+              <CardDescription className="mt-1 line-clamp-2">{props.status}</CardDescription>
+            </div>
+            <div className="grid min-w-[176px] grid-cols-2 gap-2 text-xs">
+              <AgentMetric label="Output" value={modeLabel(props.form.generation_mode)} />
+              <AgentMetric label="Channel" value={props.form.platform || "meta"} />
+              <AgentMetric label="Market" value={props.form.market || "UK"} />
+              <AgentMetric label="Static" value={props.form.max_static_images || "8"} />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-2 md:grid-cols-5">
+            {steps.map((step) => (
+              <div key={step.id} className={cn("min-h-20 rounded-md border p-3", agentStepClass(step.state))}>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">{step.title}</span>
+                  {step.state === "done" ? <Check className="h-4 w-4 text-emerald-700" /> : <span className="h-2 w-2 rounded-full bg-current opacity-35" />}
+                </div>
+                <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{step.detail}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-2 md:grid-cols-3">
+            <AgentSignal icon={<ShieldCheck className="h-4 w-4" />} label="Quality guard" value={hasBrand ? "Brand rules loaded" : "Waiting"} />
+            <AgentSignal icon={<GitBranch className="h-4 w-4" />} label="Creative route" value={hasApprovedScenario ? "Scenario approved" : "Needs scenario"} />
+            <AgentSignal icon={<Images className="h-4 w-4" />} label="Assets" value={`${props.staticProductFiles.length + (props.productFile ? 1 : 0)} refs`} />
+          </div>
+        </CardContent>
+      </Card>
+      <AgentVoiceVisualizer busy={props.busy} />
+    </div>
+  );
+}
+
+function AgentMetric(props: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-slate-50 px-3 py-2">
+      <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{props.label}</p>
+      <p className="truncate font-semibold">{props.value}</p>
+    </div>
+  );
+}
+
+function AgentSignal(props: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex min-h-14 items-center gap-2 rounded-md border bg-slate-50 px-3 py-2">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white text-emerald-800">{props.icon}</div>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold">{props.label}</p>
+        <p className="truncate text-xs text-muted-foreground">{props.value}</p>
+      </div>
+    </div>
+  );
+}
+
+function AgentVoiceVisualizer(props: { busy: boolean }) {
+  const [mode, setMode] = useState<AgentVoiceMode>("idle");
+  const effectiveMode = props.busy ? "speaking" : mode;
+  const active = effectiveMode !== "idle";
+  const bars = [22, 36, 54, 30, 62, 46, 28, 58, 34, 48, 26, 40];
+
+  return (
+    <Card className="border-slate-200 bg-[#101820] text-white">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Voice agent</CardTitle>
+            <CardDescription className="text-white/60">{voiceModeLabel(effectiveMode)}</CardDescription>
+          </div>
+          <div className={cn("flex h-10 w-10 items-center justify-center rounded-md", active ? "bg-emerald-400 text-emerald-950" : "bg-white/10")}>
+            {effectiveMode === "speaking" ? <Volume2 className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex h-24 items-center justify-center gap-1 rounded-md bg-white/5 px-4">
+          {bars.map((height, index) => (
+            <span
+              key={`${height}-${index}`}
+              className={cn("w-2 rounded-full bg-emerald-300 transition-all", active && "animate-pulse")}
+              style={{
+                height: `${active ? height : Math.max(10, height * 0.35)}px`,
+                animationDelay: `${index * 70}ms`,
+              }}
+            />
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            ["idle", "Idle"],
+            ["listening", "Listen"],
+            ["speaking", "Talk"],
+          ].map(([value, label]) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              variant={effectiveMode === value ? "secondary" : "ghost"}
+              className={cn("text-xs", effectiveMode !== value && "text-white hover:bg-white/10 hover:text-white")}
+              onClick={() => setMode(value as AgentVoiceMode)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function agentCockpitSteps(input: {
+  hasBrief: boolean;
+  hasBrand: boolean;
+  hasReference: boolean;
+  scenarioCount: number;
+  hasApprovedScenario: boolean;
+  busy: boolean;
+}): ChatWorkflowStep[] {
+  return [
+    {
+      id: "brief",
+      title: "Brief",
+      detail: input.hasBrief ? "Mission context loaded" : "Waiting for mission",
+      state: input.hasBrief ? "done" : "active",
+    },
+    {
+      id: "brand",
+      title: "Brand",
+      detail: input.hasBrand ? "Voice and rules ready" : "Add brand context",
+      state: input.hasBrand ? "done" : input.hasBrief ? "active" : "waiting",
+    },
+    {
+      id: "reference",
+      title: "Reference",
+      detail: input.hasReference ? "Provider-ready visual" : "Needs direct URL",
+      state: input.hasReference ? "done" : input.hasBrief ? "blocked" : "waiting",
+    },
+    {
+      id: "scenario",
+      title: "Scenario",
+      detail: input.hasApprovedScenario ? "Approved direction" : input.scenarioCount ? `${input.scenarioCount} variants` : "Not drafted",
+      state: input.hasApprovedScenario ? "done" : input.scenarioCount ? "active" : input.hasBrief ? "waiting" : "waiting",
+    },
+    {
+      id: "create",
+      title: "Create",
+      detail: input.busy ? "Generating assets" : "Ready when approved",
+      state: input.busy ? "active" : input.hasApprovedScenario && input.hasReference ? "done" : "waiting",
+    },
+  ];
+}
+
+function agentStepClass(state: ChatWorkflowStepState) {
+  if (state === "done") return "border-emerald-200 bg-emerald-50 text-emerald-950";
+  if (state === "active") return "border-blue-200 bg-blue-50 text-blue-950";
+  if (state === "blocked") return "border-amber-300 bg-amber-50 text-amber-950";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function voiceModeLabel(mode: AgentVoiceMode) {
+  if (mode === "listening") return "Nasloucha briefu";
+  if (mode === "speaking") return "Mluvi k procesu";
+  return "Pripraven";
+}
+
 function ChatWorkspace(props: {
   form: CampaignForm;
   update: <K extends keyof CampaignForm>(key: K, value: CampaignForm[K]) => void;
@@ -1749,6 +1948,7 @@ function ChatWorkspace(props: {
   dragActive: boolean;
   status: string;
   busy: boolean;
+  activeCompany?: Company;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   setDraft: (value: string) => void;
   setPendingFiles: React.Dispatch<React.SetStateAction<File[]>>;
@@ -1782,7 +1982,17 @@ function ChatWorkspace(props: {
         onDragLeave={() => props.onDragActive(false)}
         onDrop={props.onDrop}
       >
-        <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4">
+          <AgentCockpit
+            form={props.form}
+            status={props.status}
+            busy={props.busy}
+            activeCompany={props.activeCompany}
+            productFile={props.productFile}
+            staticProductFiles={props.staticProductFiles}
+            scenarioDrafts={props.scenarioDrafts}
+            approvedScenarioId={props.approvedScenarioId}
+          />
           <ProductReferenceCard
             form={props.form}
             update={props.update}
@@ -1883,7 +2093,7 @@ function ChatWorkspace(props: {
       </div>
 
       <footer className="shrink-0 border-t bg-white px-3 py-4 md:px-5">
-        <div className="mx-auto max-w-3xl">
+        <div className="mx-auto max-w-5xl">
           {!!props.pendingFiles.length && (
             <div className="mb-2 flex flex-wrap gap-2">
               {props.pendingFiles.map((file, index) => (
@@ -1906,7 +2116,7 @@ function ChatWorkspace(props: {
               value={props.draft}
               onChange={(event) => props.setDraft(event.target.value)}
               onPaste={props.onPaste}
-              placeholder="Napis produkt, vloz URL, popis konkurence, nebo sem paste-ni screenshot..."
+              placeholder="Zadej orchestratorovi reklamu, produkt/sluzbu, URL, konkurenci, avatar nebo kreativni smer..."
               className="min-h-20 resize-none border-0 shadow-none focus-visible:ring-0"
             />
             <ChatGenerationQuickControls form={props.form} update={props.update} />
@@ -2041,7 +2251,7 @@ function ChatWorkflowCard(props: {
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <GitBranch className="h-4 w-4" />
-              Chat workflow
+              Agent workflow
             </CardTitle>
             <CardDescription>
               {outputLabel} / {props.form.language || "jazyk"} / {props.form.market || "trh"}
@@ -2124,7 +2334,7 @@ function ChatWorkflowCard(props: {
 
         {!props.scenarioDrafts.length && (
           <div className="rounded-lg border border-dashed bg-slate-50 px-3 py-3 text-sm text-muted-foreground">
-            Scenare se objevi tady v chatu pred generovanim. Po schvaleni se vybrany scenar propise do rezie kampane.
+            Scenare se objevi v agent timeline pred generovanim. Po schvaleni se vybrany scenar propise do rezie kampane.
           </div>
         )}
       </CardContent>
@@ -2238,7 +2448,7 @@ function ChatGeneratedResultCard(props: {
                 {problem ? "Castecny vystup" : "Vygenerovany obsah"}
               </CardTitle>
               <CardDescription className="truncate">
-                {productName} / {runId || "current chat run"}
+                {productName} / {runId || "current agent run"}
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2299,11 +2509,11 @@ function ChatGeneratedResultCard(props: {
 
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-emerald-50/70 px-3 py-3">
             <p className="text-sm text-emerald-950">
-              {problem ? "Cast vystupu je dostupna. Problem je vypsany v chatu nad timto vysledkem." : "Hotovo. Pro dalsi produkt nebo novou variantu zacni cisty chat."}
+              {problem ? "Cast vystupu je dostupna. Problem je vypsany v agent timeline." : "Hotovo. Pro dalsi variantu zacni novy agent run."}
             </p>
             <Button type="button" onClick={props.onNewChat}>
               <MessageSquare className="h-4 w-4" />
-              Novy chat
+              Novy run
             </Button>
           </div>
         </CardContent>
@@ -2356,7 +2566,7 @@ function DashboardWorkspace(props: {
           <div className="grid gap-2">
             <Button onClick={() => props.onView("chat")}>
               <MessageSquare className="h-4 w-4" />
-              New campaign
+              Orchestrator
             </Button>
             <Button variant="secondary" onClick={() => props.onView("creatives")}>
               <Library className="h-4 w-4" />
@@ -3989,8 +4199,8 @@ function CampaignPanel(props: {
     <>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold">Campaign brief</p>
-          <p className="text-xs text-muted-foreground">Kontrola pred generovanim</p>
+          <p className="text-sm font-semibold">Agent control</p>
+          <p className="text-xs text-muted-foreground">Orchestrator stav</p>
         </div>
         <Button size="sm" onClick={props.generate} disabled={props.busy}>
           {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
@@ -4218,7 +4428,7 @@ function DashboardPanel(props: {
         <CardContent className="text-sm leading-6 text-muted-foreground">{props.learning?.recommendation || "Zatim bez doporuceni."}</CardContent>
       </Card>
       <div className="grid gap-2">
-        <Button onClick={() => props.onView("chat")}>New campaign</Button>
+        <Button onClick={() => props.onView("chat")}>Orchestrator</Button>
         <Button variant="secondary" onClick={() => props.onView("creatives")}>
           Creative review
         </Button>
@@ -5390,7 +5600,7 @@ function chatWorkflowSteps(
     {
       id: "scenario",
       title: "Scenar",
-      detail: hasApprovedScenario ? "Vybrany scenar je propsany do rezie." : hasScenarioDrafts ? "Vyber jednu variantu." : "Priprav scenare v chatu.",
+      detail: hasApprovedScenario ? "Vybrany scenar je propsany do rezie." : hasScenarioDrafts ? "Vyber jednu variantu." : "Priprav scenare v timeline.",
       state: hasApprovedScenario ? "done" : hasScenarioDrafts ? "active" : hasProduct ? "waiting" : "waiting",
       meta: hasScenarioDrafts ? `${scenarioDrafts.length} varianty` : "",
     },
@@ -5635,7 +5845,7 @@ function upsertApprovedScenarioPrompt(current: string, scenario: ScenarioDraft) 
     .trim();
   const block = [
     "=== CHAT APPROVED SCENARIO START ===",
-    `Use this approved chat scenario as optional scene direction layered under the app's UGC skill rules.`,
+    `Use this approved orchestrator scenario as optional scene direction layered under the app's UGC skill rules.`,
     `Language: ${scenario.language}`,
     `Title: ${scenario.title}`,
     `Angle: ${scenario.angle}`,
@@ -5720,7 +5930,7 @@ function generationRunProblem(run: Record<string, unknown> | null): { message: s
     );
   }
   if (assets.imageCount || assets.videoCount) {
-    lines.push(`Castecny vystup uz je dostupny tady v chatu: ${assets.videoCount} video / ${assets.imageCount} statik.`);
+    lines.push(`Castecny vystup uz je dostupny v agent timeline: ${assets.videoCount} video / ${assets.imageCount} statik.`);
   }
   if (nextStep) lines.push(`Dalsi krok: ${compactParserValue(nextStep, 360)}`);
   return { message: lines.join("\n\n") };
