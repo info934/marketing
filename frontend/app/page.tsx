@@ -2232,6 +2232,11 @@ function ChatWorkspace(props: {
   const nextAction = props.orchestrator?.next_action || activeWorkflowStep?.detail || props.status;
   const gateLabel = hasVideoRisk ? "needs visual URL" : hasApprovedPlan ? "ready" : props.scenarioDrafts.length ? "approve plan" : "draft plan";
   const generateButtonLabel = props.busy ? "Generating" : !hasApprovedPlan ? "Approve plan first" : hasVideoRisk ? "Add video reference" : "Generate approved ads";
+  const briefPreview = props.form.product_info.trim();
+  const directionPreview = props.form.ugc_video_extra_prompt.trim();
+  const referencePreview = props.form.product_reference_url.trim() || (referenceCount ? `${referenceCount} uploaded asset${referenceCount === 1 ? "" : "s"}` : "");
+  const subjectPreview = props.form.product_name.trim() || firstLine(props.form.product_info) || "";
+  const brandPreview = props.activeCompany?.name || props.form.company_id || "";
 
   useEffect(() => {
     timelineEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -2290,8 +2295,8 @@ function ChatWorkspace(props: {
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold">Brief intake</p>
-                    <p className="text-xs text-muted-foreground">Napis zadani volne. Orchestrator si doplni strukturu, kanal, jazyk a technicke nastaveni.</p>
+                    <p className="text-sm font-semibold">Brief snapshot</p>
+                    <p className="text-xs text-muted-foreground">Chat je hlavni vstup. Tady jen kontroluj, co ma orchestrator ulozene pro generovani.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant={hasBrief ? "secondary" : "outline"}>{hasBrief ? "brief ready" : "brief empty"}</Badge>
@@ -2299,76 +2304,43 @@ function ChatWorkspace(props: {
                   </div>
                 </div>
 
-                <div className="mt-3 grid gap-3 2xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+                <div className="mt-3 grid gap-3 2xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
                   <div className="grid gap-3 rounded-md border bg-white p-3">
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <FieldSelect
-                        label="Brand"
-                        value={props.form.company_id}
-                        onChange={(value) => props.update("company_id", value)}
-                        options={
-                          props.activeCompany
-                            ? [{ value: props.activeCompany.id, label: props.activeCompany.name || props.activeCompany.id }]
-                            : [{ value: props.form.company_id, label: props.form.company_id || "No brand" }]
-                        }
-                      />
-                      <FieldInput label="Ad subject" value={props.form.product_name} onChange={(value) => props.update("product_name", value)} />
+                      <BriefSnapshotItem label="Brand" value={brandPreview || "Ceka na chat"} />
+                      <BriefSnapshotItem label="Ad subject" value={subjectPreview || "Ceka na chat"} />
                     </div>
-                    <label className="grid gap-1 text-xs font-medium">
-                      Free brief for orchestrator
-                      <Textarea
-                        value={props.form.product_info}
-                        onChange={(event) => props.update("product_info", event.target.value)}
-                        placeholder="Co prodavame, komu, proc by meli kliknout, hlavni benefit, duvod k duvere, URL konkurence nebo poznamky..."
-                        className="min-h-32 resize-none"
-                      />
-                    </label>
-                    <label className="grid gap-1 text-xs font-medium">
-                      Must-have / avoid
-                      <Textarea
-                        value={props.form.ugc_video_extra_prompt}
-                        onChange={(event) => props.update("ugc_video_extra_prompt", event.target.value)}
-                        placeholder="Nepovinne: pohlavi avatara, veci ktere nesmi zmenit, styl, zakazane claimy, pozadovany hook..."
-                        className="min-h-20 resize-none"
-                      />
-                    </label>
+                    <BriefSnapshotItem
+                      label="Stored brief"
+                      value={briefPreview || "Zatim neni ulozeny zadny brief. Napis zadani dole do chatu a orchestrator ho propise sem."}
+                      multiline
+                      muted={!briefPreview}
+                    />
+                    <BriefSnapshotItem
+                      label="Must-have / avoid"
+                      value={directionPreview || "Bez rucni rezie. Agent si vybere angle, hook a claim hranice."}
+                      multiline
+                      muted={!directionPreview}
+                    />
                   </div>
 
                   <div className="grid gap-3">
                     <div className="rounded-md border bg-white p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-xs font-semibold text-slate-700">References</p>
-                          <p className="text-[11px] text-muted-foreground">Produktove fotky, URL nebo materialy pro fidelity.</p>
+                          <p className="text-xs font-semibold text-slate-700">Reference check</p>
+                          <p className="text-[11px] text-muted-foreground">Produkt/sluzba, vizualy a URL pro fidelity.</p>
                         </div>
                         <Badge variant={referenceCount || props.form.product_reference_url ? "secondary" : "outline"}>{referenceCount} files</Badge>
                       </div>
-                      <label className="mt-3 grid gap-1 text-xs font-medium text-muted-foreground">
-                        Product / service reference URL
-                        <Input
-                          value={props.form.product_reference_url}
-                          onChange={(event) => props.update("product_reference_url", event.target.value)}
-                          placeholder="https://example.com/product-or-visual"
-                        />
-                      </label>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-                          Main image
-                          <Input type="file" accept="image/*" onChange={(event) => props.setProductFile(event.target.files?.[0] || null)} />
-                        </label>
-                        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-                          More visuals
-                          <Input type="file" accept="image/*" multiple onChange={(event) => props.setStaticProductFiles(Array.from(event.target.files || []).slice(0, 8))} />
-                        </label>
-                      </div>
+                      <p className={cn("mt-3 line-clamp-3 break-all rounded-md border bg-slate-50 px-3 py-2 text-xs leading-5", referencePreview ? "text-slate-800" : "text-muted-foreground")}>
+                        {referencePreview || "Zadne reference zatim nejsou ulozene. Vloz URL nebo obrazky do chatu."}
+                      </p>
                       {(props.productFile || props.staticProductFiles.length > 0) && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {props.productFile && (
                             <Badge variant="secondary">
                               {props.productFile.name}
-                              <button type="button" className="ml-2 inline-flex" onClick={() => props.setProductFile(null)}>
-                                <X className="h-3 w-3" />
-                              </button>
                             </Badge>
                           )}
                           {props.staticProductFiles.map((file) => (
@@ -2376,12 +2348,6 @@ function ChatWorkspace(props: {
                               {file.name}
                             </Badge>
                           ))}
-                          {props.staticProductFiles.length > 0 && (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => props.setStaticProductFiles([])}>
-                              <X className="h-4 w-4" />
-                              Clear
-                            </Button>
-                          )}
                         </div>
                       )}
                       {hasVideoRisk && (
@@ -2392,19 +2358,84 @@ function ChatWorkspace(props: {
                     </div>
 
                     <details className="rounded-md border bg-white p-3">
-                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Advanced routing</summary>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                        {settingRows.map((row) => (
+                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Manual correction</summary>
+                      <div className="mt-3 grid gap-3">
+                        <div className="grid gap-2 sm:grid-cols-2">
                           <FieldSelect
-                            key={row.key}
-                            label={row.label}
-                            value={props.form[row.key]}
-                            onChange={(value) => props.update(row.key, value)}
-                            options={row.options}
+                            label="Brand"
+                            value={props.form.company_id}
+                            onChange={(value) => props.update("company_id", value)}
+                            options={
+                              props.activeCompany
+                                ? [{ value: props.activeCompany.id, label: props.activeCompany.name || props.activeCompany.id }]
+                                : [{ value: props.form.company_id, label: props.form.company_id || "No brand" }]
+                            }
                           />
-                        ))}
-                      </div>
-                      <div className="mt-3">
+                          <FieldInput label="Ad subject" value={props.form.product_name} onChange={(value) => props.update("product_name", value)} />
+                        </div>
+                        <label className="grid gap-1 text-xs font-medium">
+                          Stored brief override
+                          <Textarea
+                            value={props.form.product_info}
+                            onChange={(event) => props.update("product_info", event.target.value)}
+                            placeholder="Rucne uprav jen kdyz agent spatne pochopil zadani..."
+                            className="min-h-24 resize-none"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs font-medium">
+                          Must-have / avoid override
+                          <Textarea
+                            value={props.form.ugc_video_extra_prompt}
+                            onChange={(event) => props.update("ugc_video_extra_prompt", event.target.value)}
+                            placeholder="Pohlavi avatara, veci ktere nesmi zmenit, zakazane claimy, povinny hook..."
+                            className="min-h-20 resize-none"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                          Product / service reference URL
+                          <Input
+                            value={props.form.product_reference_url}
+                            onChange={(event) => props.update("product_reference_url", event.target.value)}
+                            placeholder="https://example.com/product-or-visual"
+                          />
+                        </label>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                            Main image
+                            <Input type="file" accept="image/*" onChange={(event) => props.setProductFile(event.target.files?.[0] || null)} />
+                          </label>
+                          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                            More visuals
+                            <Input type="file" accept="image/*" multiple onChange={(event) => props.setStaticProductFiles(Array.from(event.target.files || []).slice(0, 8))} />
+                          </label>
+                        </div>
+                        {(props.productFile || props.staticProductFiles.length > 0) && (
+                          <div className="flex flex-wrap gap-2">
+                            {props.productFile && (
+                              <Button type="button" variant="ghost" size="sm" onClick={() => props.setProductFile(null)}>
+                                <X className="h-4 w-4" />
+                                Clear main
+                              </Button>
+                            )}
+                            {props.staticProductFiles.length > 0 && (
+                              <Button type="button" variant="ghost" size="sm" onClick={() => props.setStaticProductFiles([])}>
+                                <X className="h-4 w-4" />
+                                Clear visuals
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          {settingRows.map((row) => (
+                            <FieldSelect
+                              key={row.key}
+                              label={row.label}
+                              value={props.form[row.key]}
+                              onChange={(value) => props.update(row.key, value)}
+                              options={row.options}
+                            />
+                          ))}
+                        </div>
                         <AvatarConsentCard
                           checked={props.form.avatar_own_person_consent}
                           onChange={(value) => props.update("avatar_own_person_consent", value)}
@@ -2720,6 +2751,23 @@ function ChatWorkspace(props: {
           </aside>
       </div>
     </div>
+    </div>
+  );
+}
+
+function BriefSnapshotItem(props: { label: string; value: string; multiline?: boolean; muted?: boolean }) {
+  return (
+    <div className="min-w-0 rounded-md border bg-slate-50 px-3 py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-normal text-slate-500">{props.label}</p>
+      <p
+        className={cn(
+          "mt-1 text-sm leading-5",
+          props.multiline ? "line-clamp-4 whitespace-pre-wrap" : "truncate",
+          props.muted ? "text-muted-foreground" : "text-slate-900",
+        )}
+      >
+        {props.value}
+      </p>
     </div>
   );
 }
