@@ -1469,10 +1469,20 @@ export default function CreativeOsApp() {
   const activePhase = orchestrator?.phases.find((phase) => phase.id === orchestrator.current_phase);
   const activePhaseLabel = activePhase?.title || "Brief";
   const activeRunId = String(latestRun?.run_id || "");
+  const chatHasApprovedPlan = Boolean(approvedScenarioId && scenarioDrafts.some((scenario) => scenario.id === approvedScenarioId));
+  const chatVideoReferenceRisk = form.generation_mode !== "static" && !isVideoReadyProductReference(form.product_reference_url);
+  const headerGenerateDisabled = busy || (view === "chat" && (!chatHasApprovedPlan || chatVideoReferenceRisk));
+  const headerGenerateLabel =
+    view !== "chat" ? "Generate" : !chatHasApprovedPlan ? "Approve plan first" : chatVideoReferenceRisk ? "Add video reference" : "Generate";
 
   return (
     <main className="h-dvh overflow-hidden bg-[#eef1f4] text-foreground">
-      <div className="grid h-full min-h-0 overflow-hidden lg:grid-cols-[88px_minmax(0,1fr)] xl:grid-cols-[276px_minmax(0,1fr)_392px]">
+      <div
+        className={cn(
+          "grid h-full min-h-0 overflow-hidden lg:grid-cols-[88px_minmax(0,1fr)]",
+          view === "chat" ? "xl:grid-cols-[276px_minmax(0,1fr)]" : "xl:grid-cols-[276px_minmax(0,1fr)_392px]",
+        )}
+      >
         <aside className="hidden min-h-0 border-r border-slate-200 bg-[#101820] text-white lg:flex lg:flex-col">
           <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-4 xl:px-5">
             <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[#23c7a9] text-[#06211e]">
@@ -1566,9 +1576,9 @@ export default function CreativeOsApp() {
                   <X className="h-4 w-4" />
                   Stop
                 </Button>
-                <Button size="sm" onClick={generate} disabled={busy}>
+                <Button size="sm" onClick={generate} disabled={headerGenerateDisabled}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                  Generate
+                  {headerGenerateLabel}
                 </Button>
               </div>
             </div>
@@ -1674,7 +1684,7 @@ export default function CreativeOsApp() {
           )}
         </section>
 
-        <aside className="chat-scroll hidden min-h-0 overflow-y-auto border-l border-slate-200 bg-[#f8fafb] xl:block">
+        <aside className={cn("chat-scroll hidden min-h-0 overflow-y-auto border-l border-slate-200 bg-[#f8fafb] xl:block", view === "chat" && "xl:hidden")}>
           <div className="sticky top-0 z-10 border-b bg-[#f8fafb]/95 px-4 py-4 backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -2043,6 +2053,27 @@ function ChatWorkspace(props: {
   applyItem: (item: ChatItem, role: ApplyRole) => void;
 }) {
   const timelineEndRef = useRef<HTMLDivElement | null>(null);
+  const workflowSteps = useMemo(
+    () =>
+      orchestratorWorkflowSteps(props.orchestrator) ||
+      chatWorkflowSteps(props.form, props.productFile, props.staticProductFiles, props.scenarioDrafts, props.approvedScenarioId),
+    [props.orchestrator, props.form, props.productFile, props.staticProductFiles, props.scenarioDrafts, props.approvedScenarioId],
+  );
+  const missionTitle = props.form.product_name || firstLine(props.form.product_info) || "New creative mission";
+  const approvedScenario = props.scenarioDrafts.find((scenario) => scenario.id === props.approvedScenarioId);
+  const hasApprovedPlan = Boolean(approvedScenario);
+  const hasManualDirection = Boolean(props.form.ugc_video_extra_prompt.trim());
+  const hasBrief = Boolean(props.form.product_info || props.form.product_reference_url || props.productFile || props.staticProductFiles.length);
+  const videoMode = props.form.generation_mode !== "static";
+  const hasVideoReference = isVideoReadyProductReference(props.form.product_reference_url);
+  const hasVideoRisk = videoMode && !hasVideoReference;
+  const referenceCount = props.staticProductFiles.length + (props.productFile ? 1 : 0);
+  const canGenerate = hasApprovedPlan && !hasVideoRisk;
+  const generateDisabled = props.busy || !canGenerate;
+  const activeWorkflowStep = workflowSteps.find((step) => step.state === "active" || step.state === "blocked");
+  const nextAction = props.orchestrator?.next_action || activeWorkflowStep?.detail || props.status;
+  const gateLabel = hasVideoRisk ? "needs visual URL" : hasApprovedPlan ? "ready" : props.scenarioDrafts.length ? "approve plan" : "draft plan";
+  const generateButtonLabel = props.busy ? "Generating" : !hasApprovedPlan ? "Approve plan first" : hasVideoRisk ? "Add video reference" : "Generate approved ads";
 
   useEffect(() => {
     timelineEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -2050,7 +2081,7 @@ function ChatWorkspace(props: {
 
   return (
     <div
-      className={cn("flex min-h-0 flex-1 flex-col overflow-hidden bg-[#eef1f4] px-3 py-4 md:px-5", props.dragActive && "bg-teal-50")}
+      className={cn("chat-scroll flex min-h-0 flex-1 flex-col overflow-y-auto bg-[#eef1f4] px-3 py-4 md:px-5 2xl:overflow-hidden", props.dragActive && "bg-teal-50")}
       onDragOver={(event) => {
         event.preventDefault();
         props.onDragActive(true);
@@ -2058,51 +2089,178 @@ function ChatWorkspace(props: {
       onDragLeave={() => props.onDragActive(false)}
       onDrop={props.onDrop}
     >
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-4">
-        <AgentCockpit
-          form={props.form}
-          status={props.status}
-          busy={props.busy}
-          activeCompany={props.activeCompany}
-          orchestrator={props.orchestrator}
-          productFile={props.productFile}
-          staticProductFiles={props.staticProductFiles}
-          scenarioDrafts={props.scenarioDrafts}
-          approvedScenarioId={props.approvedScenarioId}
-        />
-
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="flex shrink-0 flex-col gap-3 border-b bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mx-auto flex w-full max-w-[1720px] flex-col gap-4 2xl:h-full 2xl:min-h-0">
+        <section className="shrink-0 rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_560px] lg:items-center">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">Agent chat</Badge>
-                <Badge variant={props.busy ? "default" : "outline"}>{props.busy ? "working" : "ready"}</Badge>
-                <span className="text-xs text-muted-foreground">{props.items.length} messages</span>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">Orchestrator command</Badge>
+                <Badge variant={props.busy ? "default" : canGenerate ? "secondary" : "outline"}>
+                  {props.busy ? "working" : gateLabel}
+                </Badge>
+                {props.activeCompany?.name && <Badge variant="outline">{props.activeCompany.name}</Badge>}
               </div>
-              <p className="mt-1 truncate text-sm font-medium">
-                {props.form.product_name || firstLine(props.form.product_info) || "New creative mission"}
-              </p>
+              <h2 className="truncate text-2xl font-semibold tracking-normal">{missionTitle}</h2>
+              <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{nextAction}</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={props.onNewChat} disabled={props.busy}>
-                <MessageSquare className="h-4 w-4" />
-                New
-              </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={props.createScenarioDrafts} disabled={props.busy}>
-                <FlaskConical className="h-4 w-4" />
-                Plan
-              </Button>
-              <Button type="button" size="sm" onClick={props.generate} disabled={props.busy}>
-                {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                Generate
-              </Button>
+            <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <AgentMetric label="Output" value={modeLabel(props.form.generation_mode)} />
+                <AgentMetric label="Market" value={props.form.market || "UK"} />
+                <AgentMetric label="Language" value={props.form.language || "en"} />
+                <AgentMetric label="Refs" value={`${referenceCount} assets`} />
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={props.onNewChat} disabled={props.busy}>
+                  <MessageSquare className="h-4 w-4" />
+                  New run
+                </Button>
+                <Button type="button" variant="secondary" size="sm" onClick={props.createScenarioDrafts} disabled={props.busy}>
+                  <FlaskConical className="h-4 w-4" />
+                  Build plan
+                </Button>
+                <Button type="button" size="sm" onClick={props.generate} disabled={generateDisabled}>
+                  {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                  {generateButtonLabel}
+                </Button>
+              </div>
             </div>
           </div>
+        </section>
 
-      <div
-            className="chat-scroll min-h-0 flex-1 overflow-y-auto bg-[#fbfcfd] px-4 py-5"
-      >
-            <div className="mx-auto flex max-w-4xl flex-col gap-4">
+        <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)] 2xl:min-h-0 2xl:flex-1 2xl:grid-cols-[360px_minmax(0,1fr)_420px]">
+          <aside className="chat-scroll min-h-0 space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Brief intake</p>
+                <p className="text-xs text-muted-foreground">Brand, market, product, references</p>
+              </div>
+              <Badge variant={hasBrief ? "secondary" : "outline"}>{hasBrief ? "ready" : "empty"}</Badge>
+            </div>
+
+            <div className="rounded-md border bg-slate-50 p-3">
+              <p className="text-xs font-semibold text-slate-700">Campaign setup</p>
+              <div className="mt-3 grid gap-2">
+                <FieldSelect
+                  label="Output"
+                  value={props.form.generation_mode}
+                  onChange={(value) => props.update("generation_mode", value as CampaignForm["generation_mode"])}
+                  options={[
+                    { value: "both", label: "Video + statiky" },
+                    { value: "video", label: "Jen video" },
+                    { value: "static", label: "Jen statiky" },
+                  ]}
+                />
+                {settingRows.map((row) => (
+                  <FieldSelect
+                    key={row.key}
+                    label={row.label}
+                    value={props.form[row.key]}
+                    onChange={(value) => props.update(row.key, value)}
+                    options={row.options}
+                  />
+                ))}
+                <div className="grid grid-cols-2 gap-2">
+                  <FieldNumberInput
+                    label="UGC delka"
+                    value={props.form.video_length}
+                    onChange={(value) => props.update("video_length", value)}
+                    min={5}
+                    max={60}
+                    suffix="s"
+                  />
+                  <FieldNumberInput
+                    label="Statiky"
+                    value={props.form.max_static_images}
+                    onChange={(value) => props.update("max_static_images", value)}
+                    min={1}
+                    max={20}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-2 rounded-md border bg-white p-3">
+              <FieldSelect
+                label="Brand"
+                value={props.form.company_id}
+                onChange={(value) => props.update("company_id", value)}
+                options={props.activeCompany ? [{ value: props.activeCompany.id, label: props.activeCompany.name || props.activeCompany.id }] : [{ value: props.form.company_id, label: props.form.company_id || "No brand" }]}
+              />
+              <FieldInput label="Ad subject" value={props.form.product_name} onChange={(value) => props.update("product_name", value)} />
+              <label className="grid gap-1 text-xs font-medium">
+                Product or service brief
+                <Textarea
+                  value={props.form.product_info}
+                  onChange={(event) => props.update("product_info", event.target.value)}
+                  placeholder="Co prodavame, komu, proc by meli kliknout, hlavni benefit a duvod k duvere..."
+                  className="min-h-28 resize-none"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-medium">
+                Creative direction
+                <Textarea
+                  value={props.form.ugc_video_extra_prompt}
+                  onChange={(event) => props.update("ugc_video_extra_prompt", event.target.value)}
+                  placeholder="Hook, angle, pohlavi avatara, scena, mood, claim limits..."
+                  className="min-h-24 resize-none"
+                />
+              </label>
+              <div className="flex flex-wrap gap-2 text-[11px]">
+                <Badge variant={hasManualDirection ? "secondary" : "outline"}>{hasManualDirection ? "direction set" : "no direction"}</Badge>
+                <Badge variant={hasApprovedPlan ? "secondary" : "outline"}>{hasApprovedPlan ? "approved plan" : "needs approval"}</Badge>
+              </div>
+            </div>
+
+            <ProductReferenceCard
+              form={props.form}
+              update={props.update}
+              productFile={props.productFile}
+              staticProductFiles={props.staticProductFiles}
+              setProductFile={props.setProductFile}
+              setStaticProductFiles={props.setStaticProductFiles}
+              compact
+            />
+
+            {hasVideoRisk && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+                Pro video dopln direct public image URL. Lokalni upload zustava vhodny pro statiky.
+              </div>
+            )}
+
+            <AvatarConsentCard
+              checked={props.form.avatar_own_person_consent}
+              onChange={(value) => props.update("avatar_own_person_consent", value)}
+              compact
+            />
+          </aside>
+
+          <section className="flex min-h-[620px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm 2xl:min-h-0">
+            <div className="flex shrink-0 flex-col gap-3 border-b bg-white px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">Agent conversation</Badge>
+                  <Badge variant={props.busy ? "default" : "outline"}>{props.busy ? "working" : "ready"}</Badge>
+                  <span className="text-xs text-muted-foreground">{props.items.length} messages</span>
+                </div>
+                <p className="mt-1 truncate text-sm font-medium">{missionTitle}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="rounded-md border bg-slate-50 px-2 py-1">Brief</span>
+                <span className="rounded-md border bg-slate-50 px-2 py-1">Plan</span>
+                <span className="rounded-md border bg-slate-50 px-2 py-1">Approve</span>
+                <span className="rounded-md border bg-slate-50 px-2 py-1">Generate</span>
+              </div>
+            </div>
+
+            <div className="chat-scroll min-h-0 flex-1 overflow-y-auto bg-[#fbfcfd] px-4 py-5">
+              <div className="mx-auto flex max-w-4xl flex-col gap-4">
+          {!props.items.length && (
+            <div className="rounded-lg border border-dashed bg-white px-4 py-5 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Agent ceka na prvni zadani.</p>
+              <p className="mt-1">Vloz produkt, sluzbu, cilovy trh, konkurenci nebo kreativni smer. Vystup se potom schvali ve fronte vpravo.</p>
+            </div>
+          )}
           <AnimatePresence initial={false}>
             {props.items.map((item) => (
               <Fragment key={item.id}>
@@ -2168,28 +2326,9 @@ function ChatWorkspace(props: {
                     )}
                   </div>
                 </motion.article>
-                {item.id === props.scenarioMessageId && !!props.scenarioDrafts.length && (
-                  <ChatScenarioApprovalCard
-                    scenarioDrafts={props.scenarioDrafts}
-                    approvedScenarioId={props.approvedScenarioId}
-                    busy={props.busy}
-                    onApproveScenario={props.approveScenario}
-                  />
-                )}
               </Fragment>
             ))}
           </AnimatePresence>
-          {!props.scenarioMessageId && !!props.scenarioDrafts.length && (
-            <ChatScenarioApprovalCard
-              scenarioDrafts={props.scenarioDrafts}
-              approvedScenarioId={props.approvedScenarioId}
-              busy={props.busy}
-              onApproveScenario={props.approveScenario}
-            />
-          )}
-          {props.chatResultRun && (
-            <ChatGeneratedResultCard run={props.chatResultRun} onNewChat={props.onNewChat} />
-          )}
           <div ref={timelineEndRef} />
         </div>
       </div>
@@ -2245,11 +2384,11 @@ function ChatWorkspace(props: {
                 </Button>
                 <Button type="button" variant="secondary" onClick={props.createScenarioDrafts} disabled={props.busy}>
                   <FlaskConical className="h-4 w-4" />
-                  Scenare
+                  Build plan
                 </Button>
-                <Button type="button" onClick={props.generate} disabled={props.busy}>
+                <Button type="button" onClick={props.generate} disabled={generateDisabled}>
                   {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                  Generate
+                  {generateButtonLabel}
                 </Button>
               </div>
             </div>
@@ -2257,7 +2396,104 @@ function ChatWorkspace(props: {
             </div>
           </footer>
         </section>
+
+          <aside className="chat-scroll min-h-0 space-y-3 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 shadow-sm xl:col-span-2 2xl:col-span-1">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Execution queue</p>
+                <p className="text-xs text-muted-foreground">Plan gate before providers</p>
+              </div>
+              <Badge variant={canGenerate ? "secondary" : "outline"}>{gateLabel}</Badge>
+            </div>
+
+            <div className="grid gap-2">
+              {workflowSteps.map((step, index) => (
+                <div key={step.id} className={cn("rounded-md border px-3 py-2", chatWorkflowStepClass(step.state))}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white text-xs font-semibold shadow-sm">{index + 1}</span>
+                      <span className="truncate text-xs font-semibold">{step.title}</span>
+                    </div>
+                    {step.state === "done" && <Check className="h-4 w-4 text-emerald-700" />}
+                    {step.state === "active" && <Loader2 className="h-4 w-4 animate-spin text-emerald-700" />}
+                    {step.state === "blocked" && <X className="h-4 w-4 text-amber-700" />}
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-[11px] leading-4 text-muted-foreground">{step.detail}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-md border bg-slate-50 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold">Creative plan</p>
+                  {approvedScenario && <p className="text-xs text-muted-foreground">Approved: {approvedScenario.title}</p>}
+                </div>
+                <Button type="button" size="sm" variant="secondary" onClick={props.createScenarioDrafts} disabled={props.busy}>
+                  <FlaskConical className="h-4 w-4" />
+                  Draft
+                </Button>
+              </div>
+              {!props.scenarioDrafts.length && (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Nech agenta pripravit plan pro UGC i statiky. Bez schvalene varianty se provider nespusti.
+                </p>
+              )}
+              {!!props.scenarioDrafts.length && (
+                <div className="space-y-2">
+                  {props.scenarioDrafts.map((scenario) => {
+                    const approved = scenario.id === props.approvedScenarioId;
+                    return (
+                      <div key={scenario.id} className={cn("rounded-md border bg-white p-3", approved && "border-emerald-500 ring-2 ring-emerald-100")}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">{scenario.title}</p>
+                            <p className="truncate text-xs text-muted-foreground">{scenario.angle}</p>
+                          </div>
+                          <Button type="button" size="sm" variant={approved ? "secondary" : "outline"} onClick={() => props.approveScenario(scenario.id)} disabled={props.busy}>
+                            <Check className="h-4 w-4" />
+                            {approved ? "OK" : "Approve"}
+                          </Button>
+                        </div>
+                        <div className="mt-3 grid gap-2 text-xs">
+                          <div className="rounded-md bg-emerald-50 px-2 py-2">
+                            <span className="block font-semibold text-emerald-900">Hook</span>
+                            <span className="line-clamp-2 text-emerald-950">{scenario.hook}</span>
+                          </div>
+                          <div className="rounded-md bg-white px-2 py-2 ring-1 ring-slate-200">
+                            <span className="block font-semibold text-slate-700">CTA</span>
+                            <span className="line-clamp-2 text-slate-800">{scenario.cta}</span>
+                          </div>
+                        </div>
+                        <p className="mt-2 line-clamp-4 whitespace-pre-wrap rounded-md border bg-slate-50 px-2 py-2 text-xs leading-5 text-slate-700">{scenario.script}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-md border bg-white p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold">Provider gate</p>
+                <Badge variant={canGenerate ? "secondary" : "outline"}>{canGenerate ? "ready" : "blocked"}</Badge>
+              </div>
+              <div className="grid gap-2 text-xs text-muted-foreground">
+                <SignalRow label="Scenario" value={approvedScenario?.title || (props.scenarioDrafts.length ? "Needs approval" : "No draft")} />
+                <SignalRow label="Direction" value={hasManualDirection ? "Provided" : "Empty"} />
+                <SignalRow label="Video ref" value={hasVideoRisk ? "Needs public image URL" : "OK"} />
+                <SignalRow label="Mode" value={modeLabel(props.form.generation_mode)} />
+              </div>
+              <Button type="button" className="mt-3 w-full" onClick={props.generate} disabled={generateDisabled}>
+                {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                {generateButtonLabel}
+              </Button>
+            </div>
+
+            {props.chatResultRun && <ChatGeneratedResultCard run={props.chatResultRun} onNewChat={props.onNewChat} />}
+          </aside>
       </div>
+    </div>
     </div>
   );
 }
