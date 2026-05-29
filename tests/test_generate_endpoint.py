@@ -288,6 +288,84 @@ def test_creative_plan_phase_builds_prompt_guards_and_static_creatives(monkeypat
     assert [stage["stage"] for stage in saved_run["stage_results"]] == ["prompting", "creative_plan"]
 
 
+def test_provider_execution_blocks_failed_scenario_before_provider_calls(monkeypatch, tmp_path):
+    _configure_tmp_dirs(monkeypatch, tmp_path)
+    run = generation_run_repository.create_run(
+        workspace="ecommerce",
+        app_mode="ecommerce",
+        input_snapshot={"product_name": "The Roomiest Bum Bag"},
+        output_dir=str(tmp_path),
+    )
+
+    monkeypatch.setattr(
+        main_module.preflight_validator,
+        "validate",
+        lambda **kwargs: {"status": "ready", "checks": []},
+    )
+    monkeypatch.setattr(
+        main_module.scenario_integrity_guard,
+        "check",
+        lambda **kwargs: {
+            "status": "failed",
+            "reason": "Final prompt lost the approved scenario.",
+            "next_step": "Regenerate the creative plan before provider calls.",
+            "failures": [{"id": "scenario_missing", "reason": "Scenario missing."}],
+        },
+    )
+
+    def fail_provider_call(*args, **kwargs):
+        raise AssertionError("Provider generation should not run after scenario integrity fails.")
+
+    monkeypatch.setattr(main_module.openrouter_seedance_client, "generate_video", fail_provider_call)
+    monkeypatch.setattr(main_module.openrouter_image_client, "generate_ad_images", fail_provider_call)
+
+    result = main_module._run_provider_execution_phase(
+        run_id=run["run_id"],
+        product_analysis={"product_name": "The Roomiest Bum Bag"},
+        ugc_strategy={"script": "approved proof scenario"},
+        content_prompt_package={
+            "seedance_video_prompt": "generic prompt",
+            "seedance_payload": {"prompt": "generic prompt", "model": "seedance"},
+        },
+        product_fidelity_result={"product_fidelity_status": "pass"},
+        compliance_result={"compliance_status": "pass"},
+        quality_result={"export_status": "ready"},
+        ads_creative_set={
+            "static_image_ads": [{"creative_id": "c1", "visual_prompt": "generic studio image"}],
+            "static_prompt_generation": {"status": "completed"},
+        },
+        avatar={"name": "Creator"},
+        initial_final_export_status="ready",
+        generation_mode="both",
+        should_generate_video=True,
+        should_generate_static_images=True,
+        product_reference="https://example.com/product.jpg",
+        avatar_reference="",
+        use_avatar_image_reference=True,
+        seedance_model="seedance-model",
+        image_model="image-model",
+        max_static_images=2,
+        image_size="1K",
+        finance_mode=False,
+        finance_generate_sample_first=False,
+        openrouter_api_key="test-key",
+        session_output_dir=tmp_path,
+        product_image_path=tmp_path / "product.jpg",
+        saved_static_product_image_paths=[],
+    )
+
+    assert result["final_export_status"] == "blocked"
+    assert result["provider_validation"]["status"] == "blocked"
+    assert result["provider_validation"]["reason"] == "Final prompt lost the approved scenario."
+    assert result["scenario_integrity_result"]["status"] == "failed"
+    assert result["video_generation"]["video_generation_status"] == "blocked"
+    assert result["static_image_generation"]["image_generation_status"] == "blocked"
+
+    saved_run = generation_run_repository.get_run(run["run_id"])
+    assert "generating_video" not in [stage["stage"] for stage in saved_run["stage_results"]]
+    assert "generating_images" not in [stage["stage"] for stage in saved_run["stage_results"]]
+
+
 def test_orchestrator_exposes_simple_pipeline_and_specialist_skills(monkeypatch, tmp_path):
     _configure_tmp_dirs(monkeypatch, tmp_path)
     client = TestClient(app)

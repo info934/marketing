@@ -1707,6 +1707,282 @@ def _run_creative_plan_phase(
     }
 
 
+def _run_provider_execution_phase(
+    *,
+    run_id: str,
+    product_analysis: dict[str, Any],
+    ugc_strategy: dict[str, Any],
+    content_prompt_package: dict[str, Any],
+    product_fidelity_result: dict[str, Any],
+    compliance_result: dict[str, Any],
+    quality_result: dict[str, Any],
+    ads_creative_set: dict[str, Any],
+    avatar: dict[str, Any],
+    initial_final_export_status: str,
+    generation_mode: str,
+    should_generate_video: bool,
+    should_generate_static_images: bool,
+    product_reference: str,
+    avatar_reference: str,
+    use_avatar_image_reference: bool,
+    seedance_model: str,
+    image_model: str,
+    max_static_images: int,
+    image_size: str,
+    finance_mode: bool,
+    finance_generate_sample_first: bool,
+    openrouter_api_key: str,
+    session_output_dir: Path,
+    product_image_path: str | Path,
+    saved_static_product_image_paths: list[Path],
+) -> dict[str, Any]:
+    final_export_status = initial_final_export_status
+    prompt_api_key_available = bool(openrouter_api_key or config.OPENROUTER_API_KEY)
+    static_prompt_generation = ads_creative_set.get("static_prompt_generation") or {}
+    provider_validation = preflight_validator.validate(
+        generation_mode=generation_mode,
+        should_generate_video=should_generate_video,
+        should_generate_static_images=should_generate_static_images,
+        product_reference_url=product_reference,
+        avatar_reference_url=avatar_reference or str(avatar.get("image_url") or ""),
+        use_avatar_image_reference=use_avatar_image_reference,
+        seedance_model=seedance_model,
+        image_model=image_model,
+        max_static_images=max_static_images,
+        image_size=image_size,
+        require_product_reference_for_video=not finance_mode,
+        content_prompt_package=content_prompt_package,
+        ads_creative_set=ads_creative_set,
+    )
+    scenario_integrity_result = scenario_integrity_guard.check(
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        content_prompt_package=content_prompt_package,
+        avatar=avatar,
+        ads_creative_set=ads_creative_set,
+    )
+    provider_validation = _provider_validation_with_scenario_integrity(
+        provider_validation,
+        scenario_integrity_result,
+    )
+    generation_run_repository.attach_audit(run_id, provider_validation=provider_validation)
+    if provider_validation.get("status") == "blocked":
+        final_export_status = "blocked"
+
+    if generation_run_repository.is_cancel_requested(run_id):
+        final_export_status = "cancelled"
+        static_image_generation = {
+            "image_generation_status": "cancelled",
+            "error": "Generation cancelled before static image provider calls.",
+            "failure_reason": "User requested cancellation.",
+            "next_step": "Start a new run when you are ready.",
+            "model": image_model,
+            "image_assets": [],
+            "attempted_count": 0,
+            "output_dir": str(session_output_dir),
+            "generation_mode": generation_mode,
+        }
+        video_generation = {
+            "video_generation_status": "cancelled",
+            "error": "Generation cancelled before Seedance provider call.",
+            "failure_reason": "User requested cancellation.",
+            "next_step": "Start a new run when you are ready.",
+            "video_path": None,
+            "job_id": None,
+            "output_dir": str(session_output_dir),
+            "generation_mode": generation_mode,
+        }
+        generation_run_repository.update_stage(
+            run_id,
+            "cancelled",
+            status="cancelled",
+            data={"reason": "Cancellation was requested before provider generation."},
+        )
+    elif final_export_status == "blocked":
+        blocked_reason = _blocked_reason(product_fidelity_result, compliance_result, quality_result)
+        if provider_validation.get("status") == "blocked":
+            blocked_reason = provider_validation.get("reason") or blocked_reason
+        if should_generate_static_images:
+            static_image_generation = {
+                "image_generation_status": "blocked",
+                "error": "Static image generation blocked before API call.",
+                "failure_reason": blocked_reason,
+                "next_step": _blocked_next_step(provider_validation)
+                or "Review Product Fidelity, Compliance, and Provider Validation results, then adjust settings.",
+                "model": image_model,
+                "image_assets": [],
+                "attempted_count": 0,
+                "output_dir": str(session_output_dir),
+                "generation_mode": generation_mode,
+                "static_prompt_generation": ads_creative_set.get("static_prompt_generation"),
+                "provider_validation": provider_validation,
+            }
+        else:
+            static_image_generation = _static_generation_skipped_by_mode(
+                ads_creative_set=ads_creative_set,
+                image_model=image_model,
+                session_output_dir=session_output_dir,
+                generation_mode=generation_mode,
+            )
+        if should_generate_video:
+            video_generation = {
+                "video_generation_status": "blocked",
+                "error": "Video generation blocked before API call.",
+                "failure_reason": blocked_reason,
+                "next_step": _blocked_next_step(provider_validation)
+                or "Review Product Fidelity, Compliance, and Provider Validation results, then adjust settings.",
+                "video_path": None,
+                "job_id": None,
+                "output_dir": str(session_output_dir),
+                "generation_mode": generation_mode,
+                "provider_validation": provider_validation,
+            }
+        else:
+            video_generation = _video_generation_skipped_by_mode(
+                content_prompt_package=content_prompt_package,
+                session_output_dir=session_output_dir,
+                generation_mode=generation_mode,
+            )
+    else:
+        if should_generate_video:
+            generation_run_repository.update_stage(
+                run_id,
+                "generating_video",
+                status="generating_video",
+                data={"model": seedance_model, "finance_mode": finance_mode},
+            )
+            if finance_mode and content_prompt_package.get("seedance_series_payloads"):
+                all_series_payloads = content_prompt_package["seedance_series_payloads"]
+                series_payloads_to_generate = (
+                    all_series_payloads[:1]
+                    if finance_generate_sample_first and len(all_series_payloads) > 1
+                    else all_series_payloads
+                )
+                video_generation = _generate_finance_video_series(
+                    series_payloads=series_payloads_to_generate,
+                    product_name=product_analysis["product_name"],
+                    output_dir=session_output_dir,
+                    api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
+                )
+                video_generation["series_sample_first"] = bool(
+                    finance_generate_sample_first and len(all_series_payloads) > 1
+                )
+                video_generation["planned_series_count"] = len(all_series_payloads)
+                video_generation["generated_series_count"] = len(series_payloads_to_generate)
+                video_generation["remaining_series_count"] = max(
+                    0, len(all_series_payloads) - len(series_payloads_to_generate)
+                )
+                if video_generation["series_sample_first"]:
+                    video_generation["sample_next_step"] = (
+                        "Review the first sample video. If the style, avatar, pace, and infographic direction are approved, generate the remaining finance series episodes."
+                    )
+            else:
+                video_generation = openrouter_seedance_client.generate_video(
+                    seedance_payload=content_prompt_package["seedance_payload"],
+                    product_name=product_analysis["product_name"],
+                    output_dir=session_output_dir,
+                    api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
+                )
+            video_generation["generation_mode"] = generation_mode
+        else:
+            video_generation = _video_generation_skipped_by_mode(
+                content_prompt_package=content_prompt_package,
+                session_output_dir=session_output_dir,
+                generation_mode=generation_mode,
+            )
+
+        if should_generate_static_images and generation_run_repository.is_cancel_requested(run_id):
+            final_export_status = "cancelled"
+            static_image_generation = _static_generation_cancelled(
+                image_model=image_model,
+                session_output_dir=session_output_dir,
+                generation_mode=generation_mode,
+            )
+            generation_run_repository.update_stage(
+                run_id,
+                "cancelled",
+                status="cancelled",
+                data={"reason": "Cancellation was requested after video generation; static image provider calls were skipped."},
+            )
+        elif should_generate_static_images:
+            generation_run_repository.update_stage(
+                run_id,
+                "generating_images",
+                status="generating_images",
+                data={"model": image_model, "max_static_images": max_static_images},
+            )
+            if (
+                config.REQUIRE_PROMPT_MODEL_FOR_STATIC_CREATIVES
+                and prompt_api_key_available
+                and static_prompt_generation.get("status")
+                not in {"completed", "completed_with_fallback"}
+            ):
+                static_image_generation = _static_generation_blocked_by_prompt_model(
+                    ads_creative_set=ads_creative_set,
+                    image_model=image_model,
+                    session_output_dir=session_output_dir,
+                    generation_mode=generation_mode,
+                )
+            else:
+                static_image_generation = openrouter_image_client.generate_ad_images(
+                    ads_creative_set=ads_creative_set,
+                    product_name=product_analysis["product_name"],
+                    output_dir=session_output_dir,
+                    api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
+                    model=image_model,
+                    product_reference_url=str(product_image_path),
+                    reference_image_urls=[str(path) for path in saved_static_product_image_paths],
+                    enabled=True,
+                    max_images=max_static_images,
+                    image_size=image_size,
+                    enable_vision_quality_check=True,
+                    vision_model=config.OPENROUTER_VISION_MODEL,
+                    vision_retry_on_fail=True,
+                )
+                static_image_generation["generation_mode"] = generation_mode
+                static_image_generation["static_prompt_generation"] = ads_creative_set.get(
+                    "static_prompt_generation"
+                )
+        else:
+            static_image_generation = _static_generation_skipped_by_mode(
+                ads_creative_set=ads_creative_set,
+                image_model=image_model,
+                session_output_dir=session_output_dir,
+                generation_mode=generation_mode,
+            )
+            static_image_generation["static_prompt_generation"] = ads_creative_set.get(
+                "static_prompt_generation"
+            )
+
+    if (
+        generation_run_repository.is_cancel_requested(run_id)
+        and final_export_status not in {"blocked", "cancelled"}
+    ):
+        final_export_status = "cancelled"
+        generation_run_repository.update_stage(
+            run_id,
+            "cancelled",
+            status="cancelled",
+            data={"reason": "Cancellation was requested before the run was saved."},
+        )
+    final_export_status = _final_status_with_generation_result(
+        final_export_status=final_export_status,
+        video_generation=video_generation,
+        static_image_generation=static_image_generation,
+        should_generate_video=should_generate_video,
+        should_generate_static_images=should_generate_static_images,
+        finance_mode=finance_mode,
+    )
+    return {
+        "final_export_status": final_export_status,
+        "prompt_api_key_available": prompt_api_key_available,
+        "provider_validation": provider_validation,
+        "scenario_integrity_result": scenario_integrity_result,
+        "video_generation": video_generation,
+        "static_image_generation": static_image_generation,
+    }
+
+
 @app.post("/creative-rating")
 def creative_rating(record: dict[str, Any] = Body(...)) -> JSONResponse:
     try:
@@ -2350,239 +2626,40 @@ def generate(
     ads_creative_set = creative_plan_phase["ads_creative_set"]
     deterministic_ads_creative_set = creative_plan_phase["deterministic_ads_creative_set"]
     final_export_status = creative_plan_phase["final_export_status"]
-    prompt_api_key_available = bool(openrouter_api_key or config.OPENROUTER_API_KEY)
-    static_prompt_generation = ads_creative_set.get("static_prompt_generation") or {}
-    provider_validation = preflight_validator.validate(
+    provider_execution_phase = _run_provider_execution_phase(
+        run_id=run_id,
+        product_analysis=product_analysis,
+        ugc_strategy=ugc_strategy,
+        content_prompt_package=content_prompt_package,
+        product_fidelity_result=product_fidelity_result,
+        compliance_result=compliance_result,
+        quality_result=quality_result,
+        ads_creative_set=ads_creative_set,
+        avatar=avatar,
+        initial_final_export_status=final_export_status,
         generation_mode=generation_mode,
         should_generate_video=should_generate_video,
         should_generate_static_images=should_generate_static_images,
-        product_reference_url=product_reference,
-        avatar_reference_url=avatar_reference or str(avatar.get("image_url") or ""),
+        product_reference=product_reference,
+        avatar_reference=avatar_reference,
         use_avatar_image_reference=use_avatar_image_reference,
         seedance_model=seedance_model,
         image_model=image_model,
         max_static_images=max_static_images,
         image_size=image_size,
-        require_product_reference_for_video=not finance_mode,
-        content_prompt_package=content_prompt_package,
-        ads_creative_set=ads_creative_set,
-    )
-    scenario_integrity_result = scenario_integrity_guard.check(
-        product_analysis=product_analysis,
-        ugc_strategy=ugc_strategy,
-        content_prompt_package=content_prompt_package,
-        avatar=avatar,
-        ads_creative_set=ads_creative_set,
-    )
-    provider_validation = _provider_validation_with_scenario_integrity(
-        provider_validation,
-        scenario_integrity_result,
-    )
-    generation_run_repository.attach_audit(run_id, provider_validation=provider_validation)
-    if provider_validation.get("status") == "blocked":
-        final_export_status = "blocked"
-    if generation_run_repository.is_cancel_requested(run_id):
-        final_export_status = "cancelled"
-        static_image_generation = {
-            "image_generation_status": "cancelled",
-            "error": "Generation cancelled before static image provider calls.",
-            "failure_reason": "User requested cancellation.",
-            "next_step": "Start a new run when you are ready.",
-            "model": image_model,
-            "image_assets": [],
-            "attempted_count": 0,
-            "output_dir": str(session_output_dir),
-            "generation_mode": generation_mode,
-        }
-        video_generation = {
-            "video_generation_status": "cancelled",
-            "error": "Generation cancelled before Seedance provider call.",
-            "failure_reason": "User requested cancellation.",
-            "next_step": "Start a new run when you are ready.",
-            "video_path": None,
-            "job_id": None,
-            "output_dir": str(session_output_dir),
-            "generation_mode": generation_mode,
-        }
-        generation_run_repository.update_stage(
-            run_id,
-            "cancelled",
-            status="cancelled",
-            data={"reason": "Cancellation was requested before provider generation."},
-        )
-    elif final_export_status == "blocked":
-        blocked_reason = _blocked_reason(product_fidelity_result, compliance_result, quality_result)
-        if provider_validation.get("status") == "blocked":
-            blocked_reason = provider_validation.get("reason") or blocked_reason
-        if should_generate_static_images:
-            static_image_generation = {
-                "image_generation_status": "blocked",
-                "error": "Static image generation blocked before API call.",
-                "failure_reason": blocked_reason,
-                "next_step": _blocked_next_step(provider_validation)
-                or "Review Product Fidelity, Compliance, and Provider Validation results, then adjust settings.",
-                "model": image_model,
-                "image_assets": [],
-                "attempted_count": 0,
-                "output_dir": str(session_output_dir),
-                "generation_mode": generation_mode,
-                "static_prompt_generation": ads_creative_set.get("static_prompt_generation"),
-                "provider_validation": provider_validation,
-            }
-        else:
-            static_image_generation = _static_generation_skipped_by_mode(
-                ads_creative_set=ads_creative_set,
-                image_model=image_model,
-                session_output_dir=session_output_dir,
-                generation_mode=generation_mode,
-            )
-        if should_generate_video:
-            video_generation = {
-                "video_generation_status": "blocked",
-                "error": "Video generation blocked before API call.",
-                "failure_reason": blocked_reason,
-                "next_step": _blocked_next_step(provider_validation)
-                or "Review Product Fidelity, Compliance, and Provider Validation results, then adjust settings.",
-                "video_path": None,
-                "job_id": None,
-                "output_dir": str(session_output_dir),
-                "generation_mode": generation_mode,
-                "provider_validation": provider_validation,
-            }
-        else:
-            video_generation = _video_generation_skipped_by_mode(
-                content_prompt_package=content_prompt_package,
-                session_output_dir=session_output_dir,
-                generation_mode=generation_mode,
-            )
-    else:
-        if should_generate_video:
-            generation_run_repository.update_stage(
-                run_id,
-                "generating_video",
-                status="generating_video",
-                data={"model": seedance_model, "finance_mode": finance_mode},
-            )
-            if finance_mode and content_prompt_package.get("seedance_series_payloads"):
-                all_series_payloads = content_prompt_package["seedance_series_payloads"]
-                series_payloads_to_generate = (
-                    all_series_payloads[:1]
-                    if finance_generate_sample_first and len(all_series_payloads) > 1
-                    else all_series_payloads
-                )
-                video_generation = _generate_finance_video_series(
-                    series_payloads=series_payloads_to_generate,
-                    product_name=product_analysis["product_name"],
-                    output_dir=session_output_dir,
-                    api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
-                )
-                video_generation["series_sample_first"] = bool(
-                    finance_generate_sample_first and len(all_series_payloads) > 1
-                )
-                video_generation["planned_series_count"] = len(all_series_payloads)
-                video_generation["generated_series_count"] = len(series_payloads_to_generate)
-                video_generation["remaining_series_count"] = max(
-                    0, len(all_series_payloads) - len(series_payloads_to_generate)
-                )
-                if video_generation["series_sample_first"]:
-                    video_generation["sample_next_step"] = (
-                        "Review the first sample video. If the style, avatar, pace, and infographic direction are approved, generate the remaining finance series episodes."
-                    )
-            else:
-                video_generation = openrouter_seedance_client.generate_video(
-                    seedance_payload=content_prompt_package["seedance_payload"],
-                    product_name=product_analysis["product_name"],
-                    output_dir=session_output_dir,
-                    api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
-                )
-            video_generation["generation_mode"] = generation_mode
-        else:
-            video_generation = _video_generation_skipped_by_mode(
-                content_prompt_package=content_prompt_package,
-                session_output_dir=session_output_dir,
-                generation_mode=generation_mode,
-            )
-        if should_generate_static_images and generation_run_repository.is_cancel_requested(run_id):
-            final_export_status = "cancelled"
-            static_image_generation = _static_generation_cancelled(
-                image_model=image_model,
-                session_output_dir=session_output_dir,
-                generation_mode=generation_mode,
-            )
-            generation_run_repository.update_stage(
-                run_id,
-                "cancelled",
-                status="cancelled",
-                data={"reason": "Cancellation was requested after video generation; static image provider calls were skipped."},
-            )
-        elif should_generate_static_images:
-            generation_run_repository.update_stage(
-                run_id,
-                "generating_images",
-                status="generating_images",
-                data={"model": image_model, "max_static_images": max_static_images},
-            )
-            if (
-                config.REQUIRE_PROMPT_MODEL_FOR_STATIC_CREATIVES
-                and prompt_api_key_available
-                and static_prompt_generation.get("status")
-                not in {"completed", "completed_with_fallback"}
-            ):
-                static_image_generation = _static_generation_blocked_by_prompt_model(
-                    ads_creative_set=ads_creative_set,
-                    image_model=image_model,
-                    session_output_dir=session_output_dir,
-                    generation_mode=generation_mode,
-                )
-            else:
-                static_image_generation = openrouter_image_client.generate_ad_images(
-                    ads_creative_set=ads_creative_set,
-                    product_name=product_analysis["product_name"],
-                    output_dir=session_output_dir,
-                    api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
-                    model=image_model,
-                    product_reference_url=str(product_image_path),
-                    reference_image_urls=[str(path) for path in saved_static_product_image_paths],
-                    enabled=True,
-                    max_images=max_static_images,
-                    image_size=image_size,
-                    enable_vision_quality_check=True,
-                    vision_model=config.OPENROUTER_VISION_MODEL,
-                    vision_retry_on_fail=True,
-                )
-                static_image_generation["generation_mode"] = generation_mode
-                static_image_generation["static_prompt_generation"] = ads_creative_set.get(
-                    "static_prompt_generation"
-                )
-        else:
-            static_image_generation = _static_generation_skipped_by_mode(
-                ads_creative_set=ads_creative_set,
-                image_model=image_model,
-                session_output_dir=session_output_dir,
-                generation_mode=generation_mode,
-            )
-            static_image_generation["static_prompt_generation"] = ads_creative_set.get(
-                "static_prompt_generation"
-            )
-    if (
-        generation_run_repository.is_cancel_requested(run_id)
-        and final_export_status not in {"blocked", "cancelled"}
-    ):
-        final_export_status = "cancelled"
-        generation_run_repository.update_stage(
-            run_id,
-            "cancelled",
-            status="cancelled",
-            data={"reason": "Cancellation was requested before the run was saved."},
-        )
-    final_export_status = _final_status_with_generation_result(
-        final_export_status=final_export_status,
-        video_generation=video_generation,
-        static_image_generation=static_image_generation,
-        should_generate_video=should_generate_video,
-        should_generate_static_images=should_generate_static_images,
         finance_mode=finance_mode,
+        finance_generate_sample_first=finance_generate_sample_first,
+        openrouter_api_key=openrouter_api_key,
+        session_output_dir=session_output_dir,
+        product_image_path=product_image_path,
+        saved_static_product_image_paths=saved_static_product_image_paths,
     )
+    final_export_status = provider_execution_phase["final_export_status"]
+    prompt_api_key_available = provider_execution_phase["prompt_api_key_available"]
+    provider_validation = provider_execution_phase["provider_validation"]
+    scenario_integrity_result = provider_execution_phase["scenario_integrity_result"]
+    video_generation = provider_execution_phase["video_generation"]
+    static_image_generation = provider_execution_phase["static_image_generation"]
     generation_run_repository.update_stage(
         run_id,
         "qa",
