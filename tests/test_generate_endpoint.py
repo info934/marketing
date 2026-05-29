@@ -45,6 +45,82 @@ def test_planning_watchdog_uses_fallback_on_timeout():
     assert result == {"status": "fallback"}
 
 
+def test_brief_intake_phase_keeps_brand_static_refs_and_visual_output(monkeypatch, tmp_path):
+    _configure_tmp_dirs(monkeypatch, tmp_path)
+    product_image = tmp_path / "product.jpg"
+    static_ref = tmp_path / "static-angle.jpg"
+    product_image.write_bytes(b"fake-product")
+    static_ref.write_bytes(b"fake-static")
+    run = generation_run_repository.create_run(
+        workspace="ecommerce",
+        app_mode="ecommerce",
+        input_snapshot={"product_name": "The Roomiest Bum Bag"},
+        output_dir=str(tmp_path),
+    )
+
+    def run_immediately(task, *, fallback, timeout_seconds, label):
+        return task()
+
+    def fake_analyse(input_data, image_path):
+        return {
+            "product_name": input_data["product_name"],
+            "likely_product_category": "unknown",
+            "received_image_path": str(image_path),
+        }
+
+    def fake_enrich(*, product_analysis, settings, api_key, model):
+        enriched = {**product_analysis}
+        enriched["automatic_product_understanding"] = {"status": "ok", "source": "unit_test"}
+        enriched["understanding_model"] = model
+        enriched["understanding_api_key"] = api_key
+        return enriched
+
+    def fake_classify(**kwargs):
+        assert kwargs["product_analysis"]["static_product_reference_count"] == 1
+        return {"status": "ok", "reason": "matched", "recommended_category": "handbag"}
+
+    def fake_apply(product_analysis, visual_product_understanding):
+        enriched = {**product_analysis}
+        enriched["visual_product_understanding"] = visual_product_understanding
+        return enriched
+
+    monkeypatch.setattr(main_module, "_run_planning_call_with_watchdog", run_immediately)
+    monkeypatch.setattr(main_module.product_intake_agent, "analyse", fake_analyse)
+    monkeypatch.setattr(main_module.product_understanding_agent, "enrich", fake_enrich)
+    monkeypatch.setattr(main_module.visual_product_classifier_agent, "classify", fake_classify)
+    monkeypatch.setattr(main_module.visual_product_classifier_agent, "apply_to_product_analysis", fake_apply)
+
+    result = main_module._run_brief_intake_phase(
+        run_id=run["run_id"],
+        input_data={"product_name": "The Roomiest Bum Bag"},
+        product_image_path=product_image,
+        saved_static_product_image_paths=[static_ref],
+        company_ctx={"company_id": "kimlondon", "company_name": "Kimlondon"},
+        brand_context_text_value="UK dropshipping fashion brand.",
+        settings={"ad_vertical": "fashion_ecommerce"},
+        openrouter_api_key="test-key",
+        prompt_model="test-prompt-model",
+    )
+
+    assert result["company_profile"]["company_name"] == "Kimlondon"
+    assert result["brand_context"] == "UK dropshipping fashion brand."
+    assert result["ad_vertical"] == "fashion_ecommerce"
+    assert result["static_product_reference_paths"] == [str(static_ref)]
+    assert result["static_product_reference_count"] == 1
+    assert result["understanding_model"] == "test-prompt-model"
+    assert result["understanding_api_key"] == "test-key"
+    assert result["visual_product_understanding"]["recommended_category"] == "handbag"
+
+    saved_run = generation_run_repository.get_run(run["run_id"])
+    assert [stage["stage"] for stage in saved_run["stage_results"]] == [
+        "product_intake",
+        "product_understanding",
+        "product_understanding_done",
+        "visual_product_classifier",
+        "visual_product_classifier_done",
+    ]
+
+
 def test_orchestrator_exposes_simple_pipeline_and_specialist_skills(monkeypatch, tmp_path):
     _configure_tmp_dirs(monkeypatch, tmp_path)
     client = TestClient(app)

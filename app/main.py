@@ -1294,6 +1294,104 @@ def _visual_classifier_timeout_fallback(model: str) -> dict[str, Any]:
     }
 
 
+def _run_brief_intake_phase(
+    *,
+    run_id: str,
+    input_data: dict[str, Any],
+    product_image_path: str | Path,
+    saved_static_product_image_paths: list[Path],
+    company_ctx: dict[str, Any],
+    brand_context_text_value: str,
+    settings: dict[str, Any],
+    openrouter_api_key: str,
+    prompt_model: str,
+) -> dict[str, Any]:
+    generation_run_repository.update_stage(
+        run_id,
+        "product_intake",
+        status="planning",
+        data={"message": "Product Intake Agent is parsing product notes and safe facts."},
+    )
+    product_analysis = product_intake_agent.analyse(input_data, product_image_path)
+    if company_ctx:
+        product_analysis["company_profile"] = company_ctx
+        product_analysis["brand_context"] = brand_context_text_value
+        product_analysis["ad_vertical"] = settings["ad_vertical"]
+    product_analysis["static_product_reference_paths"] = [str(path) for path in saved_static_product_image_paths]
+    product_analysis["static_product_reference_count"] = len(saved_static_product_image_paths)
+
+    generation_run_repository.update_stage(
+        run_id,
+        "product_understanding",
+        status="planning",
+        data={
+            "message": "Automatic Product Understanding is running with deterministic fallback watchdog.",
+            "timeout_seconds": PRODUCT_UNDERSTANDING_TIMEOUT_SECONDS,
+        },
+    )
+    product_analysis = _run_planning_call_with_watchdog(
+        lambda: product_understanding_agent.enrich(
+            product_analysis=product_analysis,
+            settings=settings,
+            api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
+            model=prompt_model,
+        ),
+        fallback=lambda: _product_understanding_timeout_fallback(
+            product_analysis,
+            settings,
+            prompt_model,
+        ),
+        timeout_seconds=PRODUCT_UNDERSTANDING_TIMEOUT_SECONDS,
+        label="product_understanding",
+    )
+    generation_run_repository.update_stage(
+        run_id,
+        "product_understanding_done",
+        status="planning",
+        data={
+            "message": "Automatic Product Understanding finished.",
+            "status": (product_analysis.get("automatic_product_understanding") or {}).get("status"),
+            "source": (product_analysis.get("automatic_product_understanding") or {}).get("source"),
+        },
+    )
+
+    generation_run_repository.update_stage(
+        run_id,
+        "visual_product_classifier",
+        status="planning",
+        data={
+            "message": "Visual Product Classifier is checking the product image.",
+            "timeout_seconds": VISUAL_PRODUCT_CLASSIFIER_TIMEOUT_SECONDS,
+        },
+    )
+    visual_product_understanding = _run_planning_call_with_watchdog(
+        lambda: visual_product_classifier_agent.classify(
+            product_analysis=product_analysis,
+            product_image_path=product_image_path,
+            settings=settings,
+            api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
+            model=config.OPENROUTER_VISION_MODEL,
+        ),
+        fallback=lambda: _visual_classifier_timeout_fallback(config.OPENROUTER_VISION_MODEL),
+        timeout_seconds=VISUAL_PRODUCT_CLASSIFIER_TIMEOUT_SECONDS,
+        label="visual_product_classifier",
+    )
+    generation_run_repository.update_stage(
+        run_id,
+        "visual_product_classifier_done",
+        status="planning",
+        data={
+            "message": "Visual Product Classifier finished.",
+            "status": visual_product_understanding.get("status"),
+            "reason": visual_product_understanding.get("reason"),
+        },
+    )
+    return visual_product_classifier_agent.apply_to_product_analysis(
+        product_analysis,
+        visual_product_understanding,
+    )
+
+
 @app.post("/creative-rating")
 def creative_rating(record: dict[str, Any] = Body(...)) -> JSONResponse:
     try:
@@ -1886,87 +1984,16 @@ def generate(
         status="planning",
         data={"message": "Product understanding and creative brain started."},
     )
-    generation_run_repository.update_stage(
-        run_id,
-        "product_intake",
-        status="planning",
-        data={"message": "Product Intake Agent is parsing product notes and safe facts."},
-    )
-    product_analysis = product_intake_agent.analyse(input_data, product_image_path)
-    if company_ctx:
-        product_analysis["company_profile"] = company_ctx
-        product_analysis["brand_context"] = brand_context_text_value
-        product_analysis["ad_vertical"] = settings["ad_vertical"]
-    product_analysis["static_product_reference_paths"] = [str(path) for path in saved_static_product_image_paths]
-    product_analysis["static_product_reference_count"] = len(saved_static_product_image_paths)
-    generation_run_repository.update_stage(
-        run_id,
-        "product_understanding",
-        status="planning",
-        data={
-            "message": "Automatic Product Understanding is running with deterministic fallback watchdog.",
-            "timeout_seconds": PRODUCT_UNDERSTANDING_TIMEOUT_SECONDS,
-        },
-    )
-    product_analysis = _run_planning_call_with_watchdog(
-        lambda: product_understanding_agent.enrich(
-            product_analysis=product_analysis,
-            settings=settings,
-            api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
-            model=prompt_model,
-        ),
-        fallback=lambda: _product_understanding_timeout_fallback(
-            product_analysis,
-            settings,
-            prompt_model,
-        ),
-        timeout_seconds=PRODUCT_UNDERSTANDING_TIMEOUT_SECONDS,
-        label="product_understanding",
-    )
-    generation_run_repository.update_stage(
-        run_id,
-        "product_understanding_done",
-        status="planning",
-        data={
-            "message": "Automatic Product Understanding finished.",
-            "status": (product_analysis.get("automatic_product_understanding") or {}).get("status"),
-            "source": (product_analysis.get("automatic_product_understanding") or {}).get("source"),
-        },
-    )
-    generation_run_repository.update_stage(
-        run_id,
-        "visual_product_classifier",
-        status="planning",
-        data={
-            "message": "Visual Product Classifier is checking the product image.",
-            "timeout_seconds": VISUAL_PRODUCT_CLASSIFIER_TIMEOUT_SECONDS,
-        },
-    )
-    visual_product_understanding = _run_planning_call_with_watchdog(
-        lambda: visual_product_classifier_agent.classify(
-            product_analysis=product_analysis,
-            product_image_path=product_image_path,
-            settings=settings,
-            api_key=openrouter_api_key or config.OPENROUTER_API_KEY,
-            model=config.OPENROUTER_VISION_MODEL,
-        ),
-        fallback=lambda: _visual_classifier_timeout_fallback(config.OPENROUTER_VISION_MODEL),
-        timeout_seconds=VISUAL_PRODUCT_CLASSIFIER_TIMEOUT_SECONDS,
-        label="visual_product_classifier",
-    )
-    generation_run_repository.update_stage(
-        run_id,
-        "visual_product_classifier_done",
-        status="planning",
-        data={
-            "message": "Visual Product Classifier finished.",
-            "status": visual_product_understanding.get("status"),
-            "reason": visual_product_understanding.get("reason"),
-        },
-    )
-    product_analysis = visual_product_classifier_agent.apply_to_product_analysis(
-        product_analysis,
-        visual_product_understanding,
+    product_analysis = _run_brief_intake_phase(
+        run_id=run_id,
+        input_data=input_data,
+        product_image_path=product_image_path,
+        saved_static_product_image_paths=saved_static_product_image_paths,
+        company_ctx=company_ctx,
+        brand_context_text_value=brand_context_text_value,
+        settings=settings,
+        openrouter_api_key=openrouter_api_key,
+        prompt_model=prompt_model,
     )
     competitor_strategy = competitor_strategy_agent.analyze(
         enabled=bool(competitor_strategy_enabled) and not finance_mode,
