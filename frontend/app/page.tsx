@@ -2210,6 +2210,7 @@ function ChatWorkspace(props: {
   applyItem: (item: ChatItem, role: ApplyRole) => void;
 }) {
   const timelineEndRef = useRef<HTMLDivElement | null>(null);
+  const [missionHeaderCollapsed, setMissionHeaderCollapsed] = useState(false);
   const workflowSteps = useMemo(
     () =>
       orchestratorWorkflowSteps(props.orchestrator) ||
@@ -2248,7 +2249,7 @@ function ChatWorkspace(props: {
     >
       <div className="mx-auto flex w-full max-w-[1720px] flex-col gap-4 2xl:h-full 2xl:min-h-0">
         <section className="shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_410px] xl:items-start 2xl:grid-cols-[minmax(0,1fr)_470px]">
+          <div className={cn("grid gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_410px] xl:items-start 2xl:grid-cols-[minmax(0,1fr)_470px]", missionHeaderCollapsed && "hidden")}>
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">Orchestrator command</Badge>
@@ -2279,6 +2280,10 @@ function ChatWorkspace(props: {
                 <Button type="button" size="sm" onClick={props.generate} disabled={generateDisabled}>
                   {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
                   {generateButtonLabel}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setMissionHeaderCollapsed(true)} title="Minimalizovat horní část">
+                  <ZoomOut className="h-4 w-4" />
+                  Minimal
                 </Button>
               </div>
 
@@ -2400,6 +2405,41 @@ function ChatWorkspace(props: {
               </div>
             </div>
             <AgentVoiceVisualizer busy={props.busy} status={gateLabel} compact />
+          </div>
+
+          <div className={cn("flex min-h-16 flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between", !missionHeaderCollapsed && "hidden")}>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">Orchestrator command</Badge>
+                <Badge variant={props.busy ? "default" : canGenerate ? "secondary" : "outline"}>
+                  {props.busy ? "working" : gateLabel}
+                </Badge>
+                <Badge variant={hasBrief ? "secondary" : "outline"}>{hasBrief ? "brief ready" : "brief empty"}</Badge>
+                {props.activeCompany?.name && <Badge variant="outline">{props.activeCompany.name}</Badge>}
+              </div>
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                <h2 className="truncate text-lg font-semibold tracking-normal">{missionTitle}</h2>
+                <span className="truncate text-xs text-muted-foreground">{modeLabel(props.form.generation_mode)} / {props.form.market || "UK"} / {referenceCount} refs</span>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={props.onNewChat} disabled={props.busy}>
+                <MessageSquare className="h-4 w-4" />
+                New run
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={props.createScenarioDrafts} disabled={props.busy}>
+                <FlaskConical className="h-4 w-4" />
+                Build plan
+              </Button>
+              <Button type="button" size="sm" onClick={props.generate} disabled={generateDisabled}>
+                {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                {generateButtonLabel}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => setMissionHeaderCollapsed(false)} title="Zobrazit brief a brain">
+                <ZoomIn className="h-4 w-4" />
+                Brief
+              </Button>
+            </div>
           </div>
         </section>
 
