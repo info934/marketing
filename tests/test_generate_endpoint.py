@@ -121,6 +121,73 @@ def test_brief_intake_phase_keeps_brand_static_refs_and_visual_output(monkeypatc
     ]
 
 
+def test_strategy_phase_keeps_specialist_outputs_and_runtime_safe_competitor_prompt(monkeypatch):
+    product_analysis = {"product_name": "The Roomiest Bum Bag", "likely_product_category": "handbag"}
+    settings = {"market": "UK", "language": "en"}
+    input_data = {}
+    avatar = {"name": "Creator"}
+
+    def fake_competitor_analyze(**kwargs):
+        assert kwargs["enabled"] is True
+        return {"status": "ready", "angle": "proof against cheap bag doubts", "system_prompt": "private"}
+
+    monkeypatch.setattr(main_module.competitor_strategy_agent, "analyze", fake_competitor_analyze)
+    monkeypatch.setattr(
+        main_module.performance_memory,
+        "select_insights",
+        lambda product_analysis, settings: {"winning_hooks": ["existing hook"]},
+    )
+    monkeypatch.setattr(
+        main_module.creative_memory_db,
+        "retrieve_guidance",
+        lambda product_analysis, settings: {"winning_patterns": ["memory hook"], "avoid_patterns": ["generic studio"]},
+    )
+    monkeypatch.setattr(
+        main_module.audience_research_agent,
+        "generate",
+        lambda **kwargs: {"segment": "UK shoppers who need visual proof"},
+    )
+    monkeypatch.setattr(main_module.emotional_angle_engine, "generate", lambda **kwargs: {"angle": "trust"})
+    monkeypatch.setattr(main_module.creative_psychology_agent, "generate", lambda **kwargs: {"bias": "specificity"})
+    monkeypatch.setattr(main_module.voice_personality_engine, "generate", lambda **kwargs: {"voice": "direct"})
+    monkeypatch.setattr(main_module.ugc_hook_agent, "generate", lambda **kwargs: {"hooks": ["show the zipper first"]})
+    monkeypatch.setattr(main_module.scene_director_agent, "generate", lambda **kwargs: {"scene": "carried scale"})
+    monkeypatch.setattr(main_module.scene_chaining_agent, "generate", lambda **kwargs: {"chain": ["scale", "detail"]})
+    monkeypatch.setattr(main_module.ugc_agent, "generate_strategy", lambda **kwargs: {"script": "show proof"})
+    monkeypatch.setattr(main_module.ad_angle_multiplier, "generate", lambda **kwargs: {"angles": ["proof", "style"]})
+    monkeypatch.setattr(
+        main_module.ad_angle_selector,
+        "select",
+        lambda **kwargs: {"selected_angle": "proof", "reason": "highest clarity"},
+    )
+
+    result = main_module._run_strategy_phase(
+        product_analysis=product_analysis,
+        settings=settings,
+        input_data=input_data,
+        avatar=avatar,
+        language="en",
+        finance_mode=False,
+        competitor_strategy_enabled=True,
+        competitor_name="Competitor",
+        competitor_url="https://example.com",
+        competitor_chat_brief="They use generic studio shots.",
+        competitor_screenshot_notes="Many look identical.",
+        competitor_screenshot_assets=[{"path": "competitor.png"}],
+    )
+
+    assert result["competitor_strategy"] == {"status": "ready", "angle": "proof against cheap bag doubts"}
+    assert input_data["competitor_strategy"] == result["competitor_strategy"]
+    assert input_data["competitor_strategy_system_prompt"] == main_module.competitor_strategy_agent.SYSTEM_PROMPT
+    assert settings["performance_insights"]["winning_hooks"] == ["existing hook", "memory hook"]
+    assert settings["performance_insights"]["avoid_patterns"] == ["generic studio"]
+    assert settings["audience_research"]["segment"] == "UK shoppers who need visual proof"
+    assert result["ugc_strategy"]["competitor_strategy"] == result["competitor_strategy"]
+    assert result["ugc_strategy"]["ad_angle_multiplier"]["angles"] == ["proof", "style"]
+    assert result["ugc_strategy"]["ad_angle_selector"]["selected_angle"] == "proof"
+    assert result["ugc_strategy"]["creative_memory_rag"]["winning_patterns"] == ["memory hook"]
+
+
 def test_orchestrator_exposes_simple_pipeline_and_specialist_skills(monkeypatch, tmp_path):
     _configure_tmp_dirs(monkeypatch, tmp_path)
     client = TestClient(app)

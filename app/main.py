@@ -1392,6 +1392,162 @@ def _run_brief_intake_phase(
     )
 
 
+def _run_strategy_phase(
+    *,
+    product_analysis: dict[str, Any],
+    settings: dict[str, Any],
+    input_data: dict[str, Any],
+    avatar: dict[str, Any],
+    language: str,
+    finance_mode: bool,
+    competitor_strategy_enabled: bool,
+    competitor_name: str,
+    competitor_url: str,
+    competitor_chat_brief: str,
+    competitor_screenshot_notes: str,
+    competitor_screenshot_assets: list[dict[str, Any]],
+) -> dict[str, Any]:
+    competitor_strategy = competitor_strategy_agent.analyze(
+        enabled=bool(competitor_strategy_enabled) and not finance_mode,
+        competitor_name=competitor_name,
+        competitor_url=competitor_url,
+        competitor_chat_brief=competitor_chat_brief,
+        competitor_screenshot_notes=competitor_screenshot_notes,
+        screenshot_assets=competitor_screenshot_assets,
+        product_analysis=product_analysis,
+        settings=settings,
+    )
+    competitor_strategy_runtime = {
+        key: value
+        for key, value in competitor_strategy.items()
+        if key not in {"system_prompt"}
+    }
+    settings["competitor_strategy"] = competitor_strategy_runtime
+    settings["competitor_strategy_system_prompt"] = competitor_strategy_agent.SYSTEM_PROMPT
+    input_data["competitor_strategy"] = competitor_strategy_runtime
+    input_data["competitor_strategy_system_prompt"] = (
+        competitor_strategy_agent.SYSTEM_PROMPT if competitor_strategy_runtime.get("status") == "ready" else ""
+    )
+
+    performance_insights = performance_memory.select_insights(product_analysis, settings)
+    creative_memory_guidance = creative_memory_db.retrieve_guidance(
+        product_analysis=product_analysis,
+        settings=settings,
+    )
+    performance_insights["creative_memory_rag"] = creative_memory_guidance
+    performance_insights["winning_hooks"] = _merge_unique(
+        performance_insights.get("winning_hooks") or [],
+        creative_memory_guidance.get("winning_patterns") or [],
+    )
+    performance_insights["avoid_patterns"] = creative_memory_guidance.get("avoid_patterns") or []
+
+    audience_research = audience_research_agent.generate(
+        product_analysis=product_analysis,
+        settings=settings,
+        performance_insights=performance_insights,
+    )
+    emotional_angle = emotional_angle_engine.generate(
+        product_analysis=product_analysis,
+        audience_research=audience_research,
+        performance_insights=performance_insights,
+        settings=settings,
+    )
+    creative_psychology = creative_psychology_agent.generate(
+        product_analysis=product_analysis,
+        audience_research=audience_research,
+        performance_insights=performance_insights,
+        emotional_angle=emotional_angle,
+    )
+    voice_personality = voice_personality_engine.generate(
+        avatar=avatar,
+        product_analysis=product_analysis,
+        audience_research=audience_research,
+        emotional_angle=emotional_angle,
+        settings=settings,
+    )
+    ugc_hook_strategy = ugc_hook_agent.generate(
+        product_analysis=product_analysis,
+        audience_research=audience_research,
+        creative_psychology=creative_psychology,
+        performance_insights=performance_insights,
+        language=language,
+    )
+    scene_direction = scene_director_agent.generate(
+        product_analysis=product_analysis,
+        audience_research=audience_research,
+        creative_psychology=creative_psychology,
+        performance_insights=performance_insights,
+        language=language,
+    )
+    scene_chaining = scene_chaining_agent.generate(
+        product_analysis=product_analysis,
+        avatar=avatar,
+        settings=settings,
+        scene_direction=scene_direction,
+        voice_personality=voice_personality,
+    )
+    settings.update(
+        {
+            "performance_insights": performance_insights,
+            "creative_memory_guidance": creative_memory_guidance,
+            "audience_research": audience_research,
+            "emotional_angle": emotional_angle,
+            "creative_psychology": creative_psychology,
+            "voice_personality": voice_personality,
+            "ugc_hook_strategy": ugc_hook_strategy,
+            "scene_direction": scene_direction,
+            "scene_chaining": scene_chaining,
+        }
+    )
+
+    ugc_strategy = ugc_agent.generate_strategy(
+        product_analysis=product_analysis,
+        avatar=avatar,
+        settings=settings,
+    )
+    if not finance_mode:
+        ugc_strategy["competitor_strategy"] = competitor_strategy_runtime
+    if finance_mode:
+        ugc_strategy = finance_video_agent.generate_strategy(
+            product_analysis=product_analysis,
+            avatar=avatar,
+            settings=settings,
+        )
+        scene_chaining = scene_chaining_agent.generate(
+            product_analysis=product_analysis,
+            avatar=avatar,
+            settings=settings,
+            scene_direction=ugc_strategy.get("scene_direction") or {},
+            voice_personality=ugc_strategy.get("voice_personality") or voice_personality,
+        )
+        settings["scene_chaining"] = scene_chaining
+        ugc_strategy["scene_chaining"] = scene_chaining
+    if not finance_mode:
+        angle_multiplier = ad_angle_multiplier.generate(
+            product_analysis=product_analysis,
+            ugc_strategy=ugc_strategy,
+            settings=settings,
+        )
+        angle_selector = ad_angle_selector.select(
+            angle_multiplier=angle_multiplier,
+            product_analysis=product_analysis,
+            ugc_strategy=ugc_strategy,
+            settings=settings,
+        )
+        settings["ad_angle_multiplier"] = angle_multiplier
+        settings["ad_angle_selector"] = angle_selector
+        ugc_strategy["ad_angle_multiplier"] = angle_multiplier
+        ugc_strategy["ad_angle_selector"] = angle_selector
+    ugc_strategy["creative_memory_rag"] = creative_memory_guidance
+
+    return {
+        "ugc_strategy": ugc_strategy,
+        "performance_insights": performance_insights,
+        "creative_memory_guidance": creative_memory_guidance,
+        "competitor_strategy": competitor_strategy_runtime,
+    }
+
+
 @app.post("/creative-rating")
 def creative_rating(record: dict[str, Any] = Body(...)) -> JSONResponse:
     try:
@@ -1995,135 +2151,22 @@ def generate(
         openrouter_api_key=openrouter_api_key,
         prompt_model=prompt_model,
     )
-    competitor_strategy = competitor_strategy_agent.analyze(
-        enabled=bool(competitor_strategy_enabled) and not finance_mode,
+    strategy_phase = _run_strategy_phase(
+        product_analysis=product_analysis,
+        settings=settings,
+        input_data=input_data,
+        avatar=avatar,
+        language=language,
+        finance_mode=finance_mode,
+        competitor_strategy_enabled=competitor_strategy_enabled,
         competitor_name=competitor_name,
         competitor_url=competitor_url,
         competitor_chat_brief=competitor_chat_brief,
         competitor_screenshot_notes=competitor_screenshot_notes,
-        screenshot_assets=competitor_screenshot_assets,
-        product_analysis=product_analysis,
-        settings=settings,
+        competitor_screenshot_assets=competitor_screenshot_assets,
     )
-    competitor_strategy_runtime = {
-        key: value
-        for key, value in competitor_strategy.items()
-        if key not in {"system_prompt"}
-    }
-    settings["competitor_strategy"] = competitor_strategy_runtime
-    settings["competitor_strategy_system_prompt"] = competitor_strategy_agent.SYSTEM_PROMPT
-    input_data["competitor_strategy"] = competitor_strategy_runtime
-    input_data["competitor_strategy_system_prompt"] = (
-        competitor_strategy_agent.SYSTEM_PROMPT if competitor_strategy_runtime.get("status") == "ready" else ""
-    )
-    performance_insights = performance_memory.select_insights(product_analysis, settings)
-    creative_memory_guidance = creative_memory_db.retrieve_guidance(
-        product_analysis=product_analysis,
-        settings=settings,
-    )
-    performance_insights["creative_memory_rag"] = creative_memory_guidance
-    performance_insights["winning_hooks"] = _merge_unique(
-        performance_insights.get("winning_hooks") or [],
-        creative_memory_guidance.get("winning_patterns") or [],
-    )
-    performance_insights["avoid_patterns"] = creative_memory_guidance.get("avoid_patterns") or []
-    audience_research = audience_research_agent.generate(
-        product_analysis=product_analysis,
-        settings=settings,
-        performance_insights=performance_insights,
-    )
-    emotional_angle = emotional_angle_engine.generate(
-        product_analysis=product_analysis,
-        audience_research=audience_research,
-        performance_insights=performance_insights,
-        settings=settings,
-    )
-    creative_psychology = creative_psychology_agent.generate(
-        product_analysis=product_analysis,
-        audience_research=audience_research,
-        performance_insights=performance_insights,
-        emotional_angle=emotional_angle,
-    )
-    voice_personality = voice_personality_engine.generate(
-        avatar=avatar,
-        product_analysis=product_analysis,
-        audience_research=audience_research,
-        emotional_angle=emotional_angle,
-        settings=settings,
-    )
-    ugc_hook_strategy = ugc_hook_agent.generate(
-        product_analysis=product_analysis,
-        audience_research=audience_research,
-        creative_psychology=creative_psychology,
-        performance_insights=performance_insights,
-        language=language,
-    )
-    scene_direction = scene_director_agent.generate(
-        product_analysis=product_analysis,
-        audience_research=audience_research,
-        creative_psychology=creative_psychology,
-        performance_insights=performance_insights,
-        language=language,
-    )
-    scene_chaining = scene_chaining_agent.generate(
-        product_analysis=product_analysis,
-        avatar=avatar,
-        settings=settings,
-        scene_direction=scene_direction,
-        voice_personality=voice_personality,
-    )
-    settings.update(
-        {
-            "performance_insights": performance_insights,
-            "creative_memory_guidance": creative_memory_guidance,
-            "audience_research": audience_research,
-            "emotional_angle": emotional_angle,
-            "creative_psychology": creative_psychology,
-            "voice_personality": voice_personality,
-            "ugc_hook_strategy": ugc_hook_strategy,
-            "scene_direction": scene_direction,
-            "scene_chaining": scene_chaining,
-        }
-    )
-    ugc_strategy = ugc_agent.generate_strategy(
-        product_analysis=product_analysis,
-        avatar=avatar,
-        settings=settings,
-    )
-    if not finance_mode:
-        ugc_strategy["competitor_strategy"] = competitor_strategy_runtime
-    if finance_mode:
-        ugc_strategy = finance_video_agent.generate_strategy(
-            product_analysis=product_analysis,
-            avatar=avatar,
-            settings=settings,
-        )
-        scene_chaining = scene_chaining_agent.generate(
-            product_analysis=product_analysis,
-            avatar=avatar,
-            settings=settings,
-            scene_direction=ugc_strategy.get("scene_direction") or {},
-            voice_personality=ugc_strategy.get("voice_personality") or voice_personality,
-        )
-        settings["scene_chaining"] = scene_chaining
-        ugc_strategy["scene_chaining"] = scene_chaining
-    if not finance_mode:
-        angle_multiplier = ad_angle_multiplier.generate(
-            product_analysis=product_analysis,
-            ugc_strategy=ugc_strategy,
-            settings=settings,
-        )
-        angle_selector = ad_angle_selector.select(
-            angle_multiplier=angle_multiplier,
-            product_analysis=product_analysis,
-            ugc_strategy=ugc_strategy,
-            settings=settings,
-        )
-        settings["ad_angle_multiplier"] = angle_multiplier
-        settings["ad_angle_selector"] = angle_selector
-        ugc_strategy["ad_angle_multiplier"] = angle_multiplier
-        ugc_strategy["ad_angle_selector"] = angle_selector
-    ugc_strategy["creative_memory_rag"] = creative_memory_guidance
+    ugc_strategy = strategy_phase["ugc_strategy"]
+    creative_memory_guidance = strategy_phase["creative_memory_guidance"]
     content_prompt_package = content_prompt_engineer_agent.generate_prompt_package(
         product_analysis=product_analysis,
         ugc_strategy=ugc_strategy,
