@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.services import scenario_contract
+
 
 def check(
     *,
@@ -16,6 +18,7 @@ def check(
     if not isinstance(lock, dict) or not lock.get("enabled"):
         return _result("passed", [])
 
+    contract = scenario_contract.build(lock, avatar=avatar, product_analysis=product_analysis)
     raw = _norm(lock.get("raw_user_direction") or "")
     prompt = _norm(
         " ".join(
@@ -28,6 +31,15 @@ def check(
     )
     category = str(product_analysis.get("likely_product_category") or "").strip().lower()
     failures: list[dict[str, str]] = []
+
+    failures.extend(
+        scenario_contract.validate_text(
+            prompt,
+            contract,
+            scope="video",
+            location="Final video prompt",
+        )
+    )
 
     if category != "apparel" and "apparel full-body worn view required" in prompt:
         failures.append(
@@ -79,27 +91,23 @@ def check(
         )
 
     ad_text = _static_prompt_text(ads_creative_set or {})
+    if ad_text:
+        failures.extend(
+            scenario_contract.validate_text(
+                ad_text,
+                contract,
+                scope="static_set",
+                location="Static creative prompts",
+            )
+        )
     expected_static_gender = avatar_gender or scenario_gender
-    if ad_text and expected_static_gender == "female" and not _contains_any(
-        ad_text, ["woman", "female-presenting", "mom", "mother", "mum"]
-    ):
-        failures.append(
-            _failure(
-                "static_avatar_gender_missing",
-                "Static prompts do not preserve the selected female-presenting avatar gender.",
-                "Add a static subject lock before image generation.",
-            )
-        )
-    if ad_text and expected_static_gender == "male" and not _contains_any(ad_text, ["man", "male-presenting"]):
-        failures.append(
-            _failure(
-                "static_avatar_gender_missing",
-                "Static prompts do not preserve the selected male-presenting avatar gender.",
-                "Add a static subject lock before image generation.",
-            )
-        )
+    contract_with_gender = dict(contract)
+    if expected_static_gender and not contract_with_gender.get("subject_gender"):
+        contract_with_gender["subject_gender"] = expected_static_gender
+    if ad_text:
+        failures.extend(scenario_contract.validate_static_gender(ad_text, contract_with_gender))
 
-    return _result("failed" if failures else "passed", failures)
+    return _result("failed" if failures else "passed", _dedupe_failures(failures), contract=contract)
 
 
 def provider_check(result: dict[str, Any]) -> dict[str, Any]:
@@ -113,10 +121,11 @@ def provider_check(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _result(status: str, failures: list[dict[str, str]]) -> dict[str, Any]:
+def _result(status: str, failures: list[dict[str, str]], contract: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "status": status,
         "failures": failures,
+        "scenario_contract": contract or {"enabled": False},
         "reason": "; ".join(item["reason"] for item in failures) if failures else None,
         "next_step": (
             "Generation was blocked before provider calls because the final prompts no longer matched the approved scenario."
@@ -128,6 +137,18 @@ def _result(status: str, failures: list[dict[str, str]]) -> dict[str, Any]:
 
 def _failure(check_id: str, reason: str, next_step: str) -> dict[str, str]:
     return {"id": check_id, "reason": reason, "next_step": next_step}
+
+
+def _dedupe_failures(failures: list[dict[str, str]]) -> list[dict[str, str]]:
+    seen = set()
+    deduped: list[dict[str, str]] = []
+    for failure in failures:
+        key = (failure.get("id"), failure.get("reason"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(failure)
+    return deduped
 
 
 def _static_prompt_text(ads_creative_set: dict[str, Any]) -> str:

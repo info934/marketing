@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services import scenario_contract
+
 
 AVOID_POLISHED_WORDS = [
     "cinematic",
@@ -25,11 +27,16 @@ def build_guidance(
     settings = settings or {}
     category = str(product_analysis.get("likely_product_category") or settings.get("product_category") or "general").lower()
     visual = product_analysis.get("visual_product_understanding") or {}
+    contract = scenario_contract.build(
+        user_scenario_lock,
+        product_analysis=product_analysis,
+    )
     product_text = " ".join(
         str(product_analysis.get(key) or "")
         for key in ("product_name", "product_info", "category", "likely_product_category")
     ).lower()
     template = _select_template(category, product_text, settings, visual, user_scenario_lock)
+    beats = _beats_for_contract(template, contract)
     return {
         "source": SOURCE,
         "template_id": template["id"],
@@ -46,7 +53,7 @@ def build_guidance(
             "avoid_words": AVOID_POLISHED_WORDS,
             "avoid_style": "polished fashion-ad staging, fake luxury sets, over-choreographed movement, fake UI, title cards, floating text, subtitle overlays",
         },
-        "beat_structure": template["beats"],
+        "beat_structure": beats,
         "camera_style": template["camera_style"],
         "closing_emotion": template["closing_emotion"],
         "visual_classifier": {
@@ -55,9 +62,29 @@ def build_guidance(
             "subcategory": visual.get("subcategory"),
             "category_confidence": visual.get("category_confidence"),
             "recommended_template_id": visual.get("recommended_template_id"),
-            "shot_requirements": visual.get("shot_requirements") or [],
+            "shot_requirements": scenario_contract.filter_conflicting_items(
+                visual.get("shot_requirements") or [],
+                contract,
+            ),
         },
     }
+
+
+def _beats_for_contract(template: dict[str, Any], contract: dict[str, Any]) -> list[str]:
+    beats = [str(beat) for beat in template.get("beats") or []]
+    tags = set(contract.get("tags") or [])
+    if template.get("id") == "carry_capacity_check" and {"bag_closed", "no_insert_items"} & tags:
+        return [
+            "0-2s bag visible on shoulder or in hand with adult body scale",
+            "2-6s exterior proof only: strap, silhouette, zipper line, pattern, and scale while the bag stays closed",
+            "6-11s approved proof items placed beside the closed bag, never inserted inside",
+            "11s-end everyday carry recap in hallway, office doorway, cafe entrance, or commute context",
+        ]
+    if contract.get("enabled"):
+        lock = scenario_contract.video_prompt_lock(contract)
+        if lock:
+            return [f"{beat}; {lock}" if index == 0 else beat for index, beat in enumerate(beats)]
+    return beats
 
 
 def _select_template(

@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from app import config
-from app.services import finance_video_agent, prompt_defaults
+from app.services import finance_video_agent, prompt_defaults, scenario_contract
 from app.services.avatar_authorization import AUTHORIZED_AVATAR_CONSENT_STATEMENT
 from app.services.localization_utils import (
     language_copy_policy,
@@ -114,7 +114,13 @@ def generate_prompt_package(
         market,
     )
     platform_copy = _platform_copy(language, product_analysis["product_name"])
-    category_prompt_directive = _category_prompt_directive(product_analysis, settings)
+    user_scenario_lock = ugc_strategy.get("user_scenario_lock") or {}
+    user_scenario_contract = scenario_contract.build(
+        user_scenario_lock,
+        avatar=avatar,
+        product_analysis=product_analysis,
+    )
+    category_prompt_directive = _category_prompt_directive(product_analysis, settings, user_scenario_contract)
     scene_chaining = ugc_strategy.get("scene_chaining") or settings.get("scene_chaining") or {}
     scene_chaining_addendum = _clean_inline(scene_chaining.get("seedance_prompt_addendum") or "")
     voice_personality = ugc_strategy.get("voice_personality") or settings.get("voice_personality") or {}
@@ -130,7 +136,6 @@ def generate_prompt_package(
         settings.get("ugc_video_extra_prompt") or "",
         product_analysis,
     )
-    user_scenario_lock = ugc_strategy.get("user_scenario_lock") or {}
     mirror_selfie_lock = _is_mirror_selfie_scenario_lock(user_scenario_lock)
     if mirror_selfie_lock:
         category_prompt_directive = _mirror_selfie_category_prompt_directive(
@@ -190,6 +195,9 @@ def generate_prompt_package(
     scenario_lock_prompt = _user_scenario_lock_directive(user_scenario_lock)
     if scenario_lock_prompt and scenario_lock_prompt not in video_prompt:
         video_prompt = f"{video_prompt} User scenario lock: {scenario_lock_prompt}"
+    scenario_contract_prompt = scenario_contract.video_prompt_lock(user_scenario_contract)
+    if scenario_contract_prompt and scenario_contract_prompt not in video_prompt:
+        video_prompt = f"{video_prompt} Approved scenario contract: {scenario_contract_prompt}"
     language_hard_lock = _language_hard_lock_prompt(language)
     if language_hard_lock and language_hard_lock not in video_prompt:
         video_prompt = f"{video_prompt} {language_hard_lock}"
@@ -209,6 +217,7 @@ def generate_prompt_package(
         "scene_chaining": scene_chaining,
         "ugc_prompt_skill": ugc_strategy.get("ugc_prompt_skill"),
         "user_scenario_lock": user_scenario_lock,
+        "user_scenario_contract": user_scenario_contract,
         "category_prompt_directive": category_prompt_directive,
         "environment_control": environment_control,
         "environment_control_directive": environment_control_directive,
@@ -859,6 +868,7 @@ def _environment_control_directive(environment_control: dict[str, Any]) -> str:
 def _category_prompt_directive(
     product_analysis: dict[str, Any],
     settings: dict[str, Any],
+    user_scenario_contract: dict[str, Any] | None = None,
 ) -> str:
     category = str(product_analysis.get("likely_product_category") or "").strip().lower()
     overrides = settings.get("category_prompt_overrides") or {}
@@ -869,15 +879,22 @@ def _category_prompt_directive(
     parts = [
         preset.get("system_prompt", ""),
         preset.get("video_directive", ""),
-        _visual_classifier_prompt_directive(product_analysis),
+        _visual_classifier_prompt_directive(product_analysis, user_scenario_contract),
     ]
-    return _clean_inline(" ".join(part for part in parts if part))
+    directive = _clean_inline(" ".join(part for part in parts if part))
+    directive = scenario_contract.rewrite_for_contract(directive, user_scenario_contract or {"enabled": False})
+    directive = scenario_contract.remove_conflicting_directives(directive, user_scenario_contract or {"enabled": False})
+    return _clean_inline(directive)
 
 
-def _visual_classifier_prompt_directive(product_analysis: dict[str, Any]) -> str:
+def _visual_classifier_prompt_directive(
+    product_analysis: dict[str, Any],
+    user_scenario_contract: dict[str, Any] | None = None,
+) -> str:
     visual = product_analysis.get("visual_product_understanding") or {}
     if visual.get("status") != "completed":
         return ""
+    user_scenario_contract = user_scenario_contract or {"enabled": False}
     chunks = []
     detected = str(visual.get("detected_object") or "").strip()
     subcategory = str(visual.get("subcategory") or "").strip()
@@ -891,10 +908,19 @@ def _visual_classifier_prompt_directive(product_analysis: dict[str, Any]) -> str
         ("Required shots", "shot_requirements"),
         ("Avoid", "avoid_in_generation"),
     ]:
-        values = [str(item).strip() for item in (visual.get(key) or [])[:4] if str(item).strip()]
+        values = scenario_contract.filter_conflicting_items(
+            [str(item).strip() for item in (visual.get(key) or [])[:4] if str(item).strip()],
+            user_scenario_contract,
+        )
         if values:
             chunks.append(f"{label}: {'; '.join(values)}.")
-    return _clean_inline(" ".join(chunks))
+    directive = scenario_contract.rewrite_for_contract(" ".join(chunks), user_scenario_contract)
+    directive = scenario_contract.remove_conflicting_directives(directive, user_scenario_contract)
+    if user_scenario_contract.get("enabled") and directive:
+        directive = _clean_inline(
+            f"{directive} User scenario contract overrides visual classifier suggestions when they conflict."
+        )
+    return _clean_inline(directive)
 
 
 def _structured_scene_fallback(

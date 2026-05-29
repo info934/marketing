@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.services import prompt_compression, prompt_defaults
+from app.services import prompt_compression, prompt_defaults, scenario_contract
 from app.services.localization_utils import is_czech as _is_czech_language
 
 
@@ -779,9 +779,14 @@ def _creator_presence_avatar_instruction(
 
 def _product_rules(product_analysis: dict[str, Any], content_prompt_package: dict[str, Any]) -> dict[str, Any]:
     facts = product_analysis.get("known_product_facts") or {}
+    contract = scenario_contract.build(
+        content_prompt_package.get("user_scenario_contract") or content_prompt_package.get("user_scenario_lock"),
+        product_analysis=product_analysis,
+    )
     return {
         "category": product_analysis.get("likely_product_category"),
-        "visual_understanding": _visual_classifier_requirements(product_analysis),
+        "visual_understanding": _visual_classifier_requirements(product_analysis, contract),
+        "user_scenario_contract": contract if contract.get("enabled") else {},
         "material": facts.get("material"),
         "color": facts.get("color"),
         "reference": product_analysis.get("product_image_path"),
@@ -793,19 +798,23 @@ def _product_rules(product_analysis: dict[str, Any], content_prompt_package: dic
     }
 
 
-def _visual_classifier_requirements(product_analysis: dict[str, Any]) -> dict[str, Any]:
+def _visual_classifier_requirements(
+    product_analysis: dict[str, Any],
+    contract: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     visual = product_analysis.get("visual_product_understanding") or {}
     if visual.get("status") != "completed":
         return {}
+    contract = contract or {"enabled": False}
     return {
         "detected_object": visual.get("detected_object"),
         "subcategory": visual.get("subcategory"),
         "recommended_template_id": visual.get("recommended_template_id"),
-        "scenario_rules": (visual.get("scenario_rules") or [])[:4],
-        "shot_requirements": (visual.get("shot_requirements") or [])[:4],
-        "avoid_in_generation": (visual.get("avoid_in_generation") or [])[:4],
-        "qa_expectations": (visual.get("qa_expectations") or [])[:4],
-        "rule": "use visual classifier requirements to choose proof shots and QA expectations; do not turn them into unsupported customer-facing claims",
+        "scenario_rules": scenario_contract.filter_conflicting_items((visual.get("scenario_rules") or [])[:4], contract),
+        "shot_requirements": scenario_contract.filter_conflicting_items((visual.get("shot_requirements") or [])[:4], contract),
+        "avoid_in_generation": scenario_contract.filter_conflicting_items((visual.get("avoid_in_generation") or [])[:4], contract),
+        "qa_expectations": scenario_contract.filter_conflicting_items((visual.get("qa_expectations") or [])[:4], contract),
+        "rule": "use visual classifier requirements to choose proof shots and QA expectations; user scenario contract overrides classifier suggestions when they conflict; do not turn classifier text into unsupported customer-facing claims",
     }
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services import ad_angle_multiplier, ad_angle_selector, prompt_defaults
+from app.services import ad_angle_multiplier, ad_angle_selector, prompt_defaults, scenario_contract
 from app.services.localization_utils import (
     is_czech as _is_czech_language,
     is_german,
@@ -38,11 +38,18 @@ def generate_ad_set(
     category = product_analysis.get("likely_product_category", "product")
     first_benefit = safe_benefits[0]
     platform = str(ugc_strategy.get("platform") or settings.get("platform") or "meta").lower()
-    static_visual_classifier_directive = _static_visual_classifier_directive(product_analysis)
+    user_scenario_contract = scenario_contract.build(
+        content_prompt_package.get("user_scenario_lock") or ugc_strategy.get("user_scenario_lock"),
+        avatar=avatar,
+        product_analysis=product_analysis,
+    )
+    static_visual_classifier_directive = _static_visual_classifier_directive(product_analysis, user_scenario_contract)
     category_image_directive = _append_once(
         _category_image_directive(product_analysis, settings),
         static_visual_classifier_directive,
     )
+    category_image_directive = scenario_contract.rewrite_for_contract(category_image_directive, user_scenario_contract)
+    category_image_directive = scenario_contract.remove_conflicting_directives(category_image_directive, user_scenario_contract)
     static_material_fidelity_lock = _static_material_fidelity_lock(product_analysis)
     emotional_angle = ugc_strategy.get("emotional_angle") or settings.get("emotional_angle") or {}
     emotional_directive = _emotional_directive(emotional_angle)
@@ -55,6 +62,7 @@ def generate_ad_set(
     )
     memory_directive = _memory_directive(creative_memory)
     static_subject_lock = _static_subject_lock(settings, ugc_strategy, content_prompt_package, avatar)
+    static_scenario_contract_lock = scenario_contract.static_prompt_lock(user_scenario_contract)
     competitor_strategy = ugc_strategy.get("competitor_strategy") or settings.get("competitor_strategy") or {}
     angle_multiplier = (
         settings.get("ad_angle_multiplier")
@@ -92,6 +100,8 @@ def generate_ad_set(
         static_image_ads = _apply_memory_to_static_ads(static_image_ads, memory_directive)
     if static_subject_lock:
         static_image_ads = _apply_static_subject_lock_to_static_ads(static_image_ads, static_subject_lock)
+    if static_scenario_contract_lock:
+        static_image_ads = _apply_static_scenario_contract_to_static_ads(static_image_ads, static_scenario_contract_lock)
     static_image_ads = _apply_static_dropshipping_realism_to_static_ads(static_image_ads)
     carousel_ad = _carousel_ad(
         language=language,
@@ -108,6 +118,8 @@ def generate_ad_set(
         carousel_ad = _apply_memory_to_carousel(carousel_ad, memory_directive)
     if static_subject_lock:
         carousel_ad = _apply_static_subject_lock_to_carousel(carousel_ad, static_subject_lock)
+    if static_scenario_contract_lock:
+        carousel_ad = _apply_static_scenario_contract_to_carousel(carousel_ad, static_scenario_contract_lock)
     carousel_ad = _apply_static_dropshipping_realism_to_carousel(carousel_ad)
     static_creative_director = _static_creative_director_audit(
         static_image_ads=static_image_ads,
@@ -124,6 +136,8 @@ def generate_ad_set(
         "selected_product_category": category,
         "category_image_directive": category_image_directive,
         "static_visual_classifier_directive": static_visual_classifier_directive,
+        "static_scenario_contract": user_scenario_contract,
+        "static_scenario_contract_lock": static_scenario_contract_lock,
         "static_product_material_fidelity_lock": static_material_fidelity_lock,
         "static_subject_lock": static_subject_lock,
         "brand_ads_context": settings.get("company_profile") or product_analysis.get("company_profile") or {},
@@ -1021,10 +1035,14 @@ def _category_image_directive(
     return " ".join(str(preset.get("image_directive") or "").split()).strip()
 
 
-def _static_visual_classifier_directive(product_analysis: dict[str, Any]) -> str:
+def _static_visual_classifier_directive(
+    product_analysis: dict[str, Any],
+    user_scenario_contract: dict[str, Any] | None = None,
+) -> str:
     visual = product_analysis.get("visual_product_understanding") or {}
     if visual.get("status") != "completed":
         return ""
+    user_scenario_contract = user_scenario_contract or {"enabled": False}
     detected = str(visual.get("detected_object") or "").strip()
     subcategory = str(visual.get("subcategory") or "").strip()
     template = str(visual.get("recommended_template_id") or "").strip()
@@ -1043,10 +1061,20 @@ def _static_visual_classifier_directive(product_analysis: dict[str, Any]) -> str
         ("Avoid in static generation", "avoid_in_generation"),
         ("Static QA expectations", "qa_expectations"),
     ]:
-        values = [str(item).strip() for item in (visual.get(key) or [])[:4] if str(item).strip()]
+        values = scenario_contract.filter_conflicting_items(
+            [str(item).strip() for item in (visual.get(key) or [])[:4] if str(item).strip()],
+            user_scenario_contract,
+        )
         if values:
             parts.append(f"{label}: {'; '.join(values)}.")
-    return " ".join(parts)[:1400]
+    directive = scenario_contract.rewrite_for_contract(" ".join(parts), user_scenario_contract)
+    directive = scenario_contract.remove_conflicting_directives(directive, user_scenario_contract)
+    if user_scenario_contract.get("enabled") and directive:
+        directive = _append_once(
+            directive,
+            "User scenario contract has priority over visual classifier suggestions when they conflict.",
+        )
+    return directive[:1400]
 
 
 def _static_template_instruction(template: str) -> str:
@@ -1953,6 +1981,62 @@ def _apply_static_subject_lock_to_creative(
     updated["visual_prompt"] = visual
     updated["static_subject_lock"] = subject_lock
     return updated
+
+
+def _apply_static_scenario_contract_to_static_ads(
+    ads: list[dict[str, Any]],
+    contract_lock: str,
+) -> list[dict[str, Any]]:
+    return [_apply_static_scenario_contract_to_creative(ad, contract_lock) for ad in ads]
+
+
+def _apply_static_scenario_contract_to_carousel(
+    carousel: dict[str, Any],
+    contract_lock: str,
+) -> dict[str, Any]:
+    updated = dict(carousel)
+    updated["static_scenario_contract_lock"] = contract_lock
+    cards = []
+    for card in updated.get("cards") or []:
+        cards.append(_apply_static_scenario_contract_to_creative(card, contract_lock))
+    updated["cards"] = cards
+    return updated
+
+
+def _apply_static_scenario_contract_to_creative(
+    creative: dict[str, Any],
+    contract_lock: str,
+) -> dict[str, Any]:
+    updated = dict(creative)
+    visual = str(updated.get("visual_prompt") or "")
+    visual = scenario_contract.rewrite_for_contract(visual, {"enabled": True, "tags": _scenario_lock_tags(contract_lock)})
+    visual = scenario_contract.remove_conflicting_directives(visual, {"enabled": True, "tags": _scenario_lock_tags(contract_lock), "forbidden_checks": _contract_checks_from_lock(contract_lock)})
+    if visual and contract_lock not in visual:
+        updated["visual_prompt"] = f"{contract_lock} {visual}"
+    updated["static_scenario_contract_lock"] = contract_lock
+    return updated
+
+
+def _scenario_lock_tags(contract_lock: str) -> list[str]:
+    lower = str(contract_lock or "").lower()
+    tags = []
+    if "keep the bag closed" in lower:
+        tags.append("bag_closed")
+    if "not inside" in lower or "next to the bag" in lower:
+        tags.append("no_insert_items")
+    if "do not use apparel" in lower or "clothing try-on" in lower:
+        tags.append("not_apparel")
+    return tags
+
+
+def _contract_checks_from_lock(contract_lock: str) -> list[dict[str, Any]]:
+    synthetic = scenario_contract.build(
+        {
+            "enabled": True,
+            "raw_user_direction": contract_lock,
+        }
+    )
+    return synthetic.get("forbidden_checks") or []
 
 
 def _subject_replacement(subject_lock: str) -> str:

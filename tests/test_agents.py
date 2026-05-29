@@ -1739,6 +1739,89 @@ def test_scenario_integrity_guard_blocks_avatar_gender_conflict():
     assert any(item["id"] == "scenario_avatar_gender_conflict" for item in result["failures"])
 
 
+def test_scenario_integrity_guard_blocks_forbidden_product_actions_from_contract():
+    lock = {
+        "enabled": True,
+        "raw_user_direction": (
+            "A busy mom shows the crossbody bag. The bag stays closed. "
+            "Do not open or close the zipper. Do not show items being inserted into the bag. "
+            "Show diapers, wipes, snacks, phone, wallet, and keys placed next to the bag."
+        ),
+    }
+    result = scenario_integrity_guard.check(
+        product_analysis={"likely_product_category": "handbag"},
+        ugc_strategy={"user_scenario_lock": lock},
+        content_prompt_package={
+            "seedance_video_prompt": (
+                "Busy mom opens the zippered compartments and places phone and keys inside the bag."
+            ),
+            "seedance_payload": {"prompt": "Shot of hands opening the main compartment and placing items inside."},
+        },
+        avatar={"voice": "female creator voice"},
+        ads_creative_set={
+            "static_image_ads": [
+                {"visual_prompt": "Adult woman opens the zipper and inserts a wallet into the bag."},
+            ],
+            "carousel_ad": {"cards": []},
+        },
+    )
+
+    failure_ids = {item["id"] for item in result["failures"]}
+    assert result["status"] == "failed"
+    assert "product_action_opening_forbidden" in failure_ids
+    assert "product_action_insert_forbidden" in failure_ids
+    assert result["scenario_contract"]["tags"] == ["bag_closed", "gender_female", "no_insert_items", "parent_context", "parent_items"]
+
+
+def test_ads_static_set_applies_scenario_contract_and_filters_classifier_conflicts():
+    product_url = "https://example.com/bag.jpg"
+    lock = {
+        "enabled": True,
+        "raw_user_direction": (
+            "Busy mom bag scenario. The bag stays closed. Do not open or close the zipper. "
+            "Do not show items being inserted into the bag. Show diapers, wipes, snacks, phone, wallet, and keys next to the bag."
+        ),
+    }
+    ad_set = ads_creative_set_agent.generate_ad_set(
+        product_analysis={
+            "product_name": "Everyday Crossbody",
+            "product_image_path": product_url,
+            "likely_product_category": "handbag",
+            "known_product_facts": {"material": "unknown"},
+            "ad_safe_detail_phrases": ["body scale", "strap", "checkered pattern"],
+            "visual_product_understanding": {
+                "status": "completed",
+                "detected_object": "bum bag",
+                "subcategory": "handbag",
+                "category_confidence": 0.91,
+                "recommended_template_id": "carry_capacity_check",
+                "scenario_rules": [
+                    "Open the zippered compartments to show the interior space",
+                    "Show the bum bag worn crossbody as in the reference image",
+                ],
+                "shot_requirements": [
+                    "Shot of hands opening the main compartment and placing items inside",
+                    "Waist-up shot showing the bag worn crossbody",
+                ],
+            },
+        },
+        ugc_strategy={"platform": "meta", "market": "UK", "language": "en", "user_scenario_lock": lock},
+        content_prompt_package={"seedance_video_prompt": "Busy mom carries the closed bag.", "user_scenario_lock": lock},
+        avatar={"voice": "female creator voice"},
+        settings={"platform": "meta", "language": "en", "market": "UK", "product_reference_url": product_url},
+    )
+
+    prompts = " ".join(item["visual_prompt"].lower() for item in ad_set["static_image_ads"])
+    directive = ad_set["static_visual_classifier_directive"].lower()
+    assert ad_set["static_scenario_contract"]["enabled"] is True
+    assert "keep the bag closed" in ad_set["static_scenario_contract_lock"].lower()
+    assert "open the zippered compartments" not in directive
+    assert "placing items inside" not in directive
+    assert "open the zippered compartments" not in prompts
+    assert "placing items inside" not in prompts
+    assert "next to the bag" in prompts or "beside-the-bag" in prompts
+
+
 def test_ads_static_set_uses_visual_classifier_for_static_images():
     product_analysis = {
         "product_name": "Everyday Shoulder Bag",

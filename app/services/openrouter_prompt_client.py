@@ -7,7 +7,7 @@ from typing import Any
 import requests
 
 from app import config
-from app.services import json_schema_contracts, prompt_defaults
+from app.services import json_schema_contracts, prompt_defaults, scenario_contract
 from app.services.localization_utils import normalize_language_code, target_language_name
 
 
@@ -1703,6 +1703,7 @@ def _merge_static_ads_prompt_enhancement(
                         fallback=item.get(field),
                         product_analysis=product_analysis,
                     )
+                    cleaned = _preserve_static_scenario_contract(cleaned, item.get("static_scenario_contract_lock"))
                 item[field] = _clean_overlay_text(cleaned, item.get(field)) if field == "overlay_text" else cleaned
 
     carousel_update = enhanced.get("carousel_ad") if isinstance(enhanced.get("carousel_ad"), dict) else {}
@@ -1726,6 +1727,7 @@ def _merge_static_ads_prompt_enhancement(
                         fallback=card.get(field),
                         product_analysis=product_analysis,
                     )
+                    cleaned = _preserve_static_scenario_contract(cleaned, card.get("static_scenario_contract_lock") or carousel.get("static_scenario_contract_lock"))
                 card[field] = _clean_overlay_text(cleaned, card.get(field)) if field == "overlay_text" else cleaned
     result["carousel_ad"] = carousel
     if isinstance(enhanced.get("meme_style_creatives"), list):
@@ -1746,6 +1748,18 @@ def _merge_static_ads_prompt_enhancement(
     if isinstance(enhanced.get("google_ads_assets"), dict):
         _merge_google_ads_assets(result, enhanced["google_ads_assets"])
     return result
+
+
+def _preserve_static_scenario_contract(prompt: str, contract_lock: Any) -> str:
+    lock = str(contract_lock or "").strip()
+    if not lock:
+        return prompt
+    contract = scenario_contract.build({"enabled": True, "raw_user_direction": lock})
+    cleaned = scenario_contract.rewrite_for_contract(prompt, contract)
+    cleaned = scenario_contract.remove_conflicting_directives(cleaned, contract)
+    if lock and lock not in cleaned:
+        cleaned = f"{lock} {cleaned}".strip()
+    return cleaned
 
 
 _STATIC_MATERIAL_TERMS = {
