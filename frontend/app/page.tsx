@@ -2288,56 +2288,19 @@ function ChatWorkspace(props: {
               </div>
 
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold">Brief intake</p>
-                    <p className="text-xs text-muted-foreground">Brand, market, product, references</p>
+                    <p className="text-xs text-muted-foreground">Napis zadani volne. Orchestrator si doplni strukturu, kanal, jazyk a technicke nastaveni.</p>
                   </div>
-                  <Badge variant={hasBrief ? "secondary" : "outline"}>{hasBrief ? "ready" : "empty"}</Badge>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={hasBrief ? "secondary" : "outline"}>{hasBrief ? "brief ready" : "brief empty"}</Badge>
+                    <Badge variant={hasManualDirection ? "secondary" : "outline"}>{hasManualDirection ? "direction set" : "agent decides angle"}</Badge>
+                  </div>
                 </div>
 
-                <div className="mt-3 grid gap-3 2xl:grid-cols-[0.85fr_1.15fr]">
-                  <div className="rounded-md border bg-white p-3">
-                    <p className="text-xs font-semibold text-slate-700">Campaign setup</p>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <FieldSelect
-                        label="Output"
-                        value={props.form.generation_mode}
-                        onChange={(value) => props.update("generation_mode", value as CampaignForm["generation_mode"])}
-                        options={[
-                          { value: "both", label: "Video + statiky" },
-                          { value: "video", label: "Jen video" },
-                          { value: "static", label: "Jen statiky" },
-                        ]}
-                      />
-                      {settingRows.map((row) => (
-                        <FieldSelect
-                          key={row.key}
-                          label={row.label}
-                          value={props.form[row.key]}
-                          onChange={(value) => props.update(row.key, value)}
-                          options={row.options}
-                        />
-                      ))}
-                      <FieldNumberInput
-                        label="UGC delka"
-                        value={props.form.video_length}
-                        onChange={(value) => props.update("video_length", value)}
-                        min={5}
-                        max={60}
-                        suffix="s"
-                      />
-                      <FieldNumberInput
-                        label="Statiky"
-                        value={props.form.max_static_images}
-                        onChange={(value) => props.update("max_static_images", value)}
-                        min={1}
-                        max={20}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2 rounded-md border bg-white p-3">
+                <div className="mt-3 grid gap-3 2xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+                  <div className="grid gap-3 rounded-md border bg-white p-3">
                     <div className="grid gap-2 sm:grid-cols-2">
                       <FieldSelect
                         label="Brand"
@@ -2351,55 +2314,134 @@ function ChatWorkspace(props: {
                       />
                       <FieldInput label="Ad subject" value={props.form.product_name} onChange={(value) => props.update("product_name", value)} />
                     </div>
-                    <div className="grid gap-2 lg:grid-cols-2">
-                      <label className="grid gap-1 text-xs font-medium">
-                        Product or service brief
-                        <Textarea
-                          value={props.form.product_info}
-                          onChange={(event) => props.update("product_info", event.target.value)}
-                          placeholder="Co prodavame, komu, proc by meli kliknout, hlavni benefit a duvod k duvere..."
-                          className="min-h-24 resize-none"
-                        />
-                      </label>
-                      <label className="grid gap-1 text-xs font-medium">
-                        Creative direction
-                        <Textarea
-                          value={props.form.ugc_video_extra_prompt}
-                          onChange={(event) => props.update("ugc_video_extra_prompt", event.target.value)}
-                          placeholder="Hook, angle, pohlavi avatara, scena, mood, claim limits..."
-                          className="min-h-24 resize-none"
-                        />
-                      </label>
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-[11px]">
-                      <Badge variant={hasManualDirection ? "secondary" : "outline"}>{hasManualDirection ? "direction set" : "no direction"}</Badge>
-                      <Badge variant={hasApprovedPlan ? "secondary" : "outline"}>{hasApprovedPlan ? "approved plan" : "needs approval"}</Badge>
-                    </div>
+                    <label className="grid gap-1 text-xs font-medium">
+                      Free brief for orchestrator
+                      <Textarea
+                        value={props.form.product_info}
+                        onChange={(event) => props.update("product_info", event.target.value)}
+                        placeholder="Co prodavame, komu, proc by meli kliknout, hlavni benefit, duvod k duvere, URL konkurence nebo poznamky..."
+                        className="min-h-32 resize-none"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs font-medium">
+                      Must-have / avoid
+                      <Textarea
+                        value={props.form.ugc_video_extra_prompt}
+                        onChange={(event) => props.update("ugc_video_extra_prompt", event.target.value)}
+                        placeholder="Nepovinne: pohlavi avatara, veci ktere nesmi zmenit, styl, zakazane claimy, pozadovany hook..."
+                        className="min-h-20 resize-none"
+                      />
+                    </label>
                   </div>
-                </div>
 
-                <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
-                  <ProductReferenceCard
-                    form={props.form}
-                    update={props.update}
-                    productFile={props.productFile}
-                    staticProductFiles={props.staticProductFiles}
-                    setProductFile={props.setProductFile}
-                    setStaticProductFiles={props.setStaticProductFiles}
-                    compact
-                  />
-
-                  <div className="space-y-3">
-                    {hasVideoRisk && (
-                      <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
-                        Pro video dopln direct public image URL. Lokalni upload zustava vhodny pro statiky.
+                  <div className="grid gap-3">
+                    <div className="rounded-md border bg-white p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700">References</p>
+                          <p className="text-[11px] text-muted-foreground">Produktove fotky, URL nebo materialy pro fidelity.</p>
+                        </div>
+                        <Badge variant={referenceCount || props.form.product_reference_url ? "secondary" : "outline"}>{referenceCount} files</Badge>
                       </div>
-                    )}
-                    <AvatarConsentCard
-                      checked={props.form.avatar_own_person_consent}
-                      onChange={(value) => props.update("avatar_own_person_consent", value)}
-                      compact
-                    />
+                      <label className="mt-3 grid gap-1 text-xs font-medium text-muted-foreground">
+                        Product / service reference URL
+                        <Input
+                          value={props.form.product_reference_url}
+                          onChange={(event) => props.update("product_reference_url", event.target.value)}
+                          placeholder="https://example.com/product-or-visual"
+                        />
+                      </label>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                          Main image
+                          <Input type="file" accept="image/*" onChange={(event) => props.setProductFile(event.target.files?.[0] || null)} />
+                        </label>
+                        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+                          More visuals
+                          <Input type="file" accept="image/*" multiple onChange={(event) => props.setStaticProductFiles(Array.from(event.target.files || []).slice(0, 8))} />
+                        </label>
+                      </div>
+                      {(props.productFile || props.staticProductFiles.length > 0) && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {props.productFile && (
+                            <Badge variant="secondary">
+                              {props.productFile.name}
+                              <button type="button" className="ml-2 inline-flex" onClick={() => props.setProductFile(null)}>
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          )}
+                          {props.staticProductFiles.map((file) => (
+                            <Badge key={`${file.name}-${file.size}`} variant="outline">
+                              {file.name}
+                            </Badge>
+                          ))}
+                          {props.staticProductFiles.length > 0 && (
+                            <Button type="button" variant="ghost" size="sm" onClick={() => props.setStaticProductFiles([])}>
+                              <X className="h-4 w-4" />
+                              Clear
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                      {hasVideoRisk && (
+                        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+                          Pro video dopln direct public image URL. Lokalni upload zustava vhodny pro statiky.
+                        </div>
+                      )}
+                    </div>
+
+                    <details className="rounded-md border bg-white p-3">
+                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Advanced settings</summary>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <FieldSelect
+                          label="Output"
+                          value={props.form.generation_mode}
+                          onChange={(value) => props.update("generation_mode", value as CampaignForm["generation_mode"])}
+                          options={[
+                            { value: "both", label: "Video + statiky" },
+                            { value: "video", label: "Jen video" },
+                            { value: "static", label: "Jen statiky" },
+                          ]}
+                        />
+                        {settingRows.map((row) => (
+                          <FieldSelect
+                            key={row.key}
+                            label={row.label}
+                            value={props.form[row.key]}
+                            onChange={(value) => props.update(row.key, value)}
+                            options={row.options}
+                          />
+                        ))}
+                        <FieldNumberInput
+                          label="UGC delka"
+                          value={props.form.video_length}
+                          onChange={(value) => props.update("video_length", value)}
+                          min={5}
+                          max={60}
+                          suffix="s"
+                        />
+                        <FieldNumberInput
+                          label="Statiky"
+                          value={props.form.max_static_images}
+                          onChange={(value) => props.update("max_static_images", value)}
+                          min={1}
+                          max={20}
+                        />
+                      </div>
+                      <div className="mt-3">
+                        <AvatarConsentCard
+                          checked={props.form.avatar_own_person_consent}
+                          onChange={(value) => props.update("avatar_own_person_consent", value)}
+                          compact
+                        />
+                      </div>
+                    </details>
+                    <div className="flex flex-wrap gap-2 text-[11px]">
+                      <Badge variant={hasApprovedPlan ? "secondary" : "outline"}>{hasApprovedPlan ? "approved plan" : "needs approval"}</Badge>
+                      <Badge variant="outline">{modeLabel(props.form.generation_mode)}</Badge>
+                      <Badge variant="outline">{props.form.market || "UK"} / {props.form.language || "en"}</Badge>
+                    </div>
                   </div>
                 </div>
               </div>
