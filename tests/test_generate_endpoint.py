@@ -655,7 +655,9 @@ def test_generate_minimal_skips_video_without_api_key(monkeypatch, tmp_path):
     assert payload["ugc_strategy"]["ugc_prompt_skill"]["arcads_api"] == "not used by this app"
     assert payload["ugc_strategy"]["category_video_recipe"]["ugc_template"]
     assert payload["ads_creative_set"]["carousel_ad"]["card_count"] == 5
-    assert payload["ads_creative_set"]["static_creative_director"]["version"] == "static_creative_director_v3"
+    assert payload["ads_creative_set"]["static_creative_director"]["version"] == "static_creative_director_v4"
+    assert payload["ads_creative_set"]["static_creative_director"]["quality_contract_version"] == "static_creative_quality_v1"
+    assert payload["ads_creative_set"]["static_creative_director"]["quality_contract_required"] is True
     assert payload["ads_creative_set"]["static_creative_director"]["max_static_images_policy"] == "cap_only_no_padding"
     assert payload["ads_creative_set"]["static_creative_director"]["visual_diversity_score"] >= 40
     assert payload["ads_creative_set"]["meme_style_creatives"]
@@ -2181,6 +2183,12 @@ def test_generate_includes_complete_ads_set_without_cta_links(monkeypatch, tmp_p
     assert len({item["angle_family"] for item in ads["static_image_ads"]}) >= 5
     assert all(item["angle_multiplier_angle"] for item in ads["static_image_ads"])
     assert all(item["angle_diversity_contract"] for item in ads["static_image_ads"])
+    assert ads["static_creative_quality_system"]["version"] == "static_creative_quality_v1"
+    assert all(item["static_creative_quality_contract"]["marketing_job"] for item in ads["static_image_ads"])
+    assert all(item["scroll_stop_mechanism"] for item in ads["static_image_ads"])
+    assert all(item["buyer_psychology_trigger"] for item in ads["static_image_ads"])
+    assert len({item["static_creative_quality_contract"]["role"] for item in ads["static_image_ads"]}) == 5
+    assert len({item["scroll_stop_mechanism"] for item in ads["static_image_ads"]}) == 5
     assert ads["carousel_ad"]["angle_selection_reason"]
     assert {
         item["angle_family"] for item in ads["ad_angle_multiplier"]["angles"]

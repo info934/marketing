@@ -312,6 +312,37 @@ def test_render_image_prompt_includes_static_visual_classifier_directive():
     assert "never render classifier words as visible image text" in prompt
 
 
+def test_render_image_prompt_includes_static_creative_quality_contract():
+    prompt = openrouter_image_client._render_image_prompt(
+        {
+            "creative_id": "C6_static_objection_check",
+            "asset_type": "static_image",
+            "set_id": "C6",
+            "creative_type": "Static objection check",
+            "angle": "PAIN_POINT",
+            "format": "Static image",
+            "layout": "handbag objection check",
+            "visual_prompt": "adult person checking the handbag near a doorway",
+            "aspect_ratio": "1:1",
+            "product_reference_url": "https://example.com/bag.jpg",
+            "static_creative_quality_contract": {
+                "marketing_job": "make one practical hesitation visible",
+                "scroll_stop_mechanism": "slightly imperfect real-world check",
+                "buyer_psychology_trigger": "loss aversion + regret avoidance",
+                "feed_read": "the buyer doubt being checked",
+                "differentiation_rule": "do not repeat the hero composition",
+            },
+        }
+    )
+
+    assert "Static creative quality contract" in prompt
+    assert "marketing job=make one practical hesitation visible" in prompt
+    assert "scroll stop=slightly imperfect real-world check" in prompt
+    assert "loss aversion + regret avoidance" in prompt
+    assert "Never render these words" in prompt
+    assert "Quality brief" in prompt
+
+
 def test_render_image_prompt_compresses_oversized_agent_prompt():
     prompt = openrouter_image_client._render_image_prompt(
         {

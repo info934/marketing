@@ -323,6 +323,7 @@ def enhance_ads_creative_set(
         "You may rewrite creative_angles, hook_bank, static image layouts/prompts/post-production overlay metadata/headline/primary_text, carousel primary_text/cards visual prompts/post-production overlay metadata, meme concepts, primary_text_variants, ad_description_suggestions, and Google Ads text assets. "
         "Treat the existing creative text as a weak placeholder only. Discard generic fallback wording and create fresh product-specific concepts. "
         "Make every variation product-specific and materially different: distinct angle, setting, visual composition, prop logic, shot distance, post-production overlay idea, and reason-to-care. "
+        "Honor static_creative_quality_contract fields as non-editable creative director instructions. They define the marketing job, scroll-stop mechanism, buyer psychology trigger, feed-read, and differentiation rule for each static; use them to improve layout and visual_prompt, but do not return or rewrite those contract fields. "
         "Enforce C2/C3/C4 visual separation: C2 PRODUCT_HERO is a product-first commerce hero frame, C3 USE_CONTEXT is a believable real-use/outfit/routine moment, C4 DETAIL_PROOF is a tight macro or visible-proof frame. Do not reuse the same background, room, surface, prop arrangement, camera distance, or lighting mood across C2/C3/C4 unless the product reference explicitly requires strict scene preservation. "
         "Static customer-facing hook copy must not be repetitive. Avoid defaulting to the same phrases like 'real detail', 'no hype', 'quick detail', or 'before deciding' across every static. Each overlay_text metadata value and primary text should reflect the role and a concrete visible product cue. "
         "Static and carousel overlay_text is post-production metadata for a later design layer, not text the AI image model should draw. Keep it short in the requested output language, ideally 2-5 words, but never include instructions in visual_prompt to render text, typography, labels, stickers, badges, callouts, or captions inside the generated image. Derive overlay_text from angle_multiplier_hook, product details, and buyer motivation; do not output the angle family or strategy label itself. A good metadata hook is 'Fits the routine' or 'Look at the finish', not 'Desire angle', 'Identity hook', or 'Detail proof'. "
@@ -346,6 +347,7 @@ def enhance_ads_creative_set(
             "creative_angles, hook_bank, static_image_ads, carousel_ad, meme_style_creatives, primary_text_variants, "
             "ad_description_suggestions, google_ads_assets. "
             "For static_image_ads include the same creative_id/set_id entries and only update layout, visual_prompt, overlay_text, primary_text, headline. overlay_text/headline are post-production customer-visible hooks, not angle labels, and visual_prompt must not ask the image model to render them as text. "
+            "Use each static_creative_quality_contract as the brief for what to improve, but do not output contract fields because they are protected internal instructions. "
             "For carousel_ad keep five cards and only update primary_text plus cards[].visual_prompt and cards[].overlay_text; card visual_prompt must stay photo-first and no-generated-text. "
             "Omit any section that does not need improvement. Do not echo unchanged data. Keep the JSON small enough for downstream parsing. "
             "For Google Ads keep character limits in mind. Do not output CTA/button fields."
@@ -1227,6 +1229,9 @@ def _static_ads_prompt_payload(ads_creative_set: dict[str, Any]) -> dict[str, An
         "category_image_directive": _clip_text(
             ads_creative_set.get("category_image_directive"), 1000
         ),
+        "static_creative_quality_system": _compact_static_quality_system(
+            ads_creative_set.get("static_creative_quality_system")
+        ),
         "creative_plan": _compact_creative_plan(ads_creative_set.get("creative_plan")),
         "static_image_ads": _compact_static_image_ads(ads_creative_set.get("static_image_ads")),
         "carousel_ad": _compact_carousel_ad(ads_creative_set.get("carousel_ad")),
@@ -1286,6 +1291,36 @@ def _compact_creative_plan(plan: Any) -> list[dict[str, Any]]:
     return compact
 
 
+def _compact_static_quality_system(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        "version": _clip_text(value.get("version"), 60),
+        "source_skills": _clip_list(value.get("source_skills"), 5, 60),
+        "principles": _clip_list(value.get("principles"), 5, 140),
+    }
+
+
+def _compact_static_quality_contract(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    limits = {
+        "version": 60,
+        "role": 80,
+        "marketing_job": 180,
+        "scroll_stop_mechanism": 180,
+        "buyer_psychology_trigger": 180,
+        "feed_read": 180,
+        "differentiation_rule": 180,
+        "image_prompt_rule": 220,
+    }
+    return {
+        key: _clip_text(value.get(key), limit)
+        for key, limit in limits.items()
+        if value.get(key)
+    }
+
+
 def _compact_static_image_ads(items: Any) -> list[dict[str, Any]]:
     if not isinstance(items, list):
         return []
@@ -1303,6 +1338,14 @@ def _compact_static_image_ads(items: Any) -> list[dict[str, Any]]:
                 "angle_multiplier_angle": _clip_text(item.get("angle_multiplier_angle"), 80),
                 "angle_multiplier_hook": _clip_text(item.get("angle_multiplier_hook"), 140),
                 "angle_diversity_contract": _clip_text(item.get("angle_diversity_contract"), 220),
+                "static_creative_quality_contract": _compact_static_quality_contract(
+                    item.get("static_creative_quality_contract")
+                ),
+                "static_marketing_job": _clip_text(item.get("static_marketing_job"), 180),
+                "scroll_stop_mechanism": _clip_text(item.get("scroll_stop_mechanism"), 180),
+                "buyer_psychology_trigger": _clip_text(item.get("buyer_psychology_trigger"), 180),
+                "feed_read": _clip_text(item.get("feed_read"), 180),
+                "static_differentiation_rule": _clip_text(item.get("static_differentiation_rule"), 180),
                 "aspect_ratio": item.get("aspect_ratio"),
                 "funnel_stage": item.get("funnel_stage"),
                 "budget_share_percent": item.get("budget_share_percent"),
@@ -1333,6 +1376,14 @@ def _compact_carousel_ad(carousel: Any) -> dict[str, Any]:
                 "angle_multiplier_angle": _clip_text(card.get("angle_multiplier_angle"), 80),
                 "angle_multiplier_hook": _clip_text(card.get("angle_multiplier_hook"), 140),
                 "angle_diversity_contract": _clip_text(card.get("angle_diversity_contract"), 180),
+                "static_creative_quality_contract": _compact_static_quality_contract(
+                    card.get("static_creative_quality_contract")
+                ),
+                "static_marketing_job": _clip_text(card.get("static_marketing_job"), 160),
+                "scroll_stop_mechanism": _clip_text(card.get("scroll_stop_mechanism"), 160),
+                "buyer_psychology_trigger": _clip_text(card.get("buyer_psychology_trigger"), 160),
+                "feed_read": _clip_text(card.get("feed_read"), 160),
+                "static_differentiation_rule": _clip_text(card.get("static_differentiation_rule"), 160),
                 "visual_prompt": _clip_text(card.get("visual_prompt"), 320),
                 "overlay_text": _clip_text(card.get("overlay_text"), 48),
             }
@@ -1341,6 +1392,10 @@ def _compact_carousel_ad(carousel: Any) -> dict[str, Any]:
         "set_id": carousel.get("set_id"),
         "creative_type": carousel.get("creative_type"),
         "angle": carousel.get("angle"),
+        "static_creative_quality_contract": _compact_static_quality_contract(
+            carousel.get("static_creative_quality_contract")
+        ),
+        "static_marketing_job": _clip_text(carousel.get("static_marketing_job"), 160),
         "aspect_ratio": carousel.get("aspect_ratio"),
         "funnel_stage": carousel.get("funnel_stage"),
         "budget_share_percent": carousel.get("budget_share_percent"),
@@ -1445,6 +1500,9 @@ def _minimal_static_prompt_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "static_visual_classifier_directive": _clip_text(
                 ads.get("static_visual_classifier_directive"), 500
             ),
+            "static_creative_quality_system": _compact_static_quality_system(
+                ads.get("static_creative_quality_system")
+            ),
             "creative_plan": ads.get("creative_plan") or [],
             "static_image_ads": ads.get("static_image_ads") or [],
             "carousel_ad": ads.get("carousel_ad") or {},
@@ -1532,6 +1590,9 @@ def _ultra_minimal_static_prompt_payload(payload: dict[str, Any]) -> dict[str, A
             "static_visual_classifier_directive": _clip_text(
                 ads.get("static_visual_classifier_directive"), 260
             ),
+            "static_creative_quality_system": _compact_static_quality_system(
+                ads.get("static_creative_quality_system")
+            ),
             "static_image_ads": _ultra_compact_static_image_ads(ads.get("static_image_ads")),
             "carousel_ad": _ultra_compact_carousel_ad(ads.get("carousel_ad")),
         },
@@ -1558,6 +1619,9 @@ def _ultra_compact_static_image_ads(items: Any) -> list[dict[str, Any]]:
                 "angle": _clip_text(item.get("angle"), 80),
                 "angle_family": _clip_text(item.get("angle_family"), 40),
                 "angle_multiplier_hook": _clip_text(item.get("angle_multiplier_hook"), 100),
+                "static_marketing_job": _clip_text(item.get("static_marketing_job"), 120),
+                "scroll_stop_mechanism": _clip_text(item.get("scroll_stop_mechanism"), 120),
+                "buyer_psychology_trigger": _clip_text(item.get("buyer_psychology_trigger"), 120),
                 "visual_prompt": _clip_text(item.get("visual_prompt"), 180),
                 "overlay_text": _clip_text(item.get("overlay_text"), 48),
                 "headline": _clip_text(item.get("headline"), 56),
@@ -1580,6 +1644,8 @@ def _ultra_compact_carousel_ad(carousel: Any) -> dict[str, Any]:
                 "role": _clip_text(card.get("role"), 60),
                 "angle_family": _clip_text(card.get("angle_family"), 40),
                 "angle_multiplier_hook": _clip_text(card.get("angle_multiplier_hook"), 100),
+                "static_marketing_job": _clip_text(card.get("static_marketing_job"), 100),
+                "scroll_stop_mechanism": _clip_text(card.get("scroll_stop_mechanism"), 100),
                 "visual_prompt": _clip_text(card.get("visual_prompt"), 120),
                 "overlay_text": _clip_text(card.get("overlay_text"), 48),
             }
@@ -1615,12 +1681,29 @@ def _shrink_static_prompt_payload(payload: dict[str, Any]) -> None:
                 item["visual_prompt"] = _clip_text(item.get("visual_prompt"), 320)
                 item["primary_text"] = _clip_text(item.get("primary_text"), 220)
                 item["why_this_angle"] = _clip_text(item.get("why_this_angle"), 140)
+                item["static_marketing_job"] = _clip_text(item.get("static_marketing_job"), 160)
+                item["scroll_stop_mechanism"] = _clip_text(item.get("scroll_stop_mechanism"), 160)
+                item["buyer_psychology_trigger"] = _clip_text(item.get("buyer_psychology_trigger"), 160)
+                item["feed_read"] = _clip_text(item.get("feed_read"), 160)
+                item["static_differentiation_rule"] = _clip_text(item.get("static_differentiation_rule"), 160)
+                item["static_creative_quality_contract"] = _compact_static_quality_contract(
+                    item.get("static_creative_quality_contract")
+                )
         carousel = ads.get("carousel_ad")
         if isinstance(carousel, dict):
             carousel["primary_text"] = _clip_text(carousel.get("primary_text"), 240)
+            carousel["static_marketing_job"] = _clip_text(carousel.get("static_marketing_job"), 160)
+            carousel["static_creative_quality_contract"] = _compact_static_quality_contract(
+                carousel.get("static_creative_quality_contract")
+            )
             for card in carousel.get("cards") or []:
                 if isinstance(card, dict):
                     card["visual_prompt"] = _clip_text(card.get("visual_prompt"), 180)
+                    card["static_marketing_job"] = _clip_text(card.get("static_marketing_job"), 140)
+                    card["scroll_stop_mechanism"] = _clip_text(card.get("scroll_stop_mechanism"), 140)
+                    card["static_creative_quality_contract"] = _compact_static_quality_contract(
+                        card.get("static_creative_quality_contract")
+                    )
         ads["ad_description_suggestions"] = {}
         ads["google_ads_assets"] = {}
         ads["meme_style_creatives"] = _clip_dict_list(

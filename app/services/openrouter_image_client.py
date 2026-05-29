@@ -704,6 +704,13 @@ def _collect_image_creatives(
                 "creative_test_hypothesis": item.get("creative_test_hypothesis"),
                 "variation_rule": item.get("variation_rule"),
                 "angle_diversity_contract": item.get("angle_diversity_contract"),
+                "static_creative_quality_contract": item.get("static_creative_quality_contract"),
+                "static_marketing_job": item.get("static_marketing_job"),
+                "scroll_stop_mechanism": item.get("scroll_stop_mechanism"),
+                "buyer_psychology_trigger": item.get("buyer_psychology_trigger"),
+                "feed_read": item.get("feed_read"),
+                "static_differentiation_rule": item.get("static_differentiation_rule"),
+                "quality_contract_status": item.get("quality_contract_status"),
                 "display_hook": _display_hook(item),
                 "funnel_stage": item.get("funnel_stage"),
                 "budget_share_percent": item.get("budget_share_percent"),
@@ -743,6 +750,13 @@ def _collect_image_creatives(
                     "creative_test_hypothesis": card.get("creative_test_hypothesis") or carousel.get("creative_test_hypothesis"),
                     "variation_rule": card.get("variation_rule"),
                     "angle_diversity_contract": card.get("angle_diversity_contract"),
+                    "static_creative_quality_contract": card.get("static_creative_quality_contract") or carousel.get("static_creative_quality_contract"),
+                    "static_marketing_job": card.get("static_marketing_job") or carousel.get("static_marketing_job"),
+                    "scroll_stop_mechanism": card.get("scroll_stop_mechanism") or carousel.get("scroll_stop_mechanism"),
+                    "buyer_psychology_trigger": card.get("buyer_psychology_trigger") or carousel.get("buyer_psychology_trigger"),
+                    "feed_read": card.get("feed_read") or carousel.get("feed_read"),
+                    "static_differentiation_rule": card.get("static_differentiation_rule") or carousel.get("static_differentiation_rule"),
+                    "quality_contract_status": card.get("quality_contract_status") or carousel.get("quality_contract_status"),
                     "display_hook": _display_hook(card, fallback=carousel),
                     "funnel_stage": carousel.get("funnel_stage"),
                     "budget_share_percent": carousel.get("budget_share_percent"),
@@ -867,6 +881,40 @@ def _short_angle_text(value: Any, limit: int = 72) -> str:
     return text if len(text) <= limit else f"{text[: max(0, limit - 3)].rstrip()}..."
 
 
+def _static_quality_contract_prompt_line(creative: dict[str, Any]) -> str:
+    contract = creative.get("static_creative_quality_contract")
+    contract_data = contract if isinstance(contract, dict) else {}
+    values = {
+        "marketing job": creative.get("static_marketing_job") or contract_data.get("marketing_job"),
+        "scroll stop": creative.get("scroll_stop_mechanism") or contract_data.get("scroll_stop_mechanism"),
+        "psychology trigger": creative.get("buyer_psychology_trigger") or contract_data.get("buyer_psychology_trigger"),
+        "feed read": creative.get("feed_read") or contract_data.get("feed_read"),
+        "differentiation": creative.get("static_differentiation_rule") or contract_data.get("differentiation_rule"),
+    }
+    parts = [
+        f"{label}={_short_angle_text(value, 180)}"
+        for label, value in values.items()
+        if str(value or "").strip()
+    ]
+    if not parts:
+        return ""
+    return (
+        "Static creative quality contract, internal direction only: "
+        + "; ".join(parts)
+        + ". Use it to choose scene, crop, proof focus, and composition. Never render these words, set IDs, labels, or psychology terms as visible image text."
+    )
+
+
+def _static_quality_contract_summary(creative: dict[str, Any]) -> str:
+    line = _static_quality_contract_prompt_line(creative)
+    if not line:
+        return ""
+    return _short_angle_text(
+        line.replace("Static creative quality contract, internal direction only: ", ""),
+        360,
+    )
+
+
 def _creative_metadata(creative: dict[str, Any]) -> dict[str, Any]:
     return {
         "creative_id": creative.get("creative_id"),
@@ -882,6 +930,13 @@ def _creative_metadata(creative: dict[str, Any]) -> dict[str, Any]:
         "creative_test_hypothesis": creative.get("creative_test_hypothesis"),
         "variation_rule": creative.get("variation_rule"),
         "angle_diversity_contract": creative.get("angle_diversity_contract"),
+        "static_creative_quality_contract": creative.get("static_creative_quality_contract"),
+        "static_marketing_job": creative.get("static_marketing_job"),
+        "scroll_stop_mechanism": creative.get("scroll_stop_mechanism"),
+        "buyer_psychology_trigger": creative.get("buyer_psychology_trigger"),
+        "feed_read": creative.get("feed_read"),
+        "static_differentiation_rule": creative.get("static_differentiation_rule"),
+        "quality_contract_status": creative.get("quality_contract_status"),
         "display_hook": creative.get("display_hook"),
         "funnel_stage": creative.get("funnel_stage"),
         "budget_share_percent": creative.get("budget_share_percent"),
@@ -982,8 +1037,9 @@ def _render_image_prompt(creative: dict[str, Any]) -> str:
     has_primary_text = bool(str(creative.get("primary_text") or "").strip())
     product_reference = creative.get("product_reference_url") or ""
     budget = creative.get("budget_share_percent")
+    quality_contract_line = _static_quality_contract_prompt_line(creative)
     lines = [
-        "Create one finished ecommerce paid social static ad image.",
+        "Create one finished paid social static ad image.",
         "Generate exactly one image for this one creative; do not create a collage, contact sheet, multi-panel set, or multiple variants in one image.",
         "Internal creative labels, set IDs, angle names, layout roles, and workflow terms are metadata only and must never appear as visible text in the image.",
         f"Asset type: {creative.get('asset_type')}.",
@@ -1052,6 +1108,8 @@ def _render_image_prompt(creative: dict[str, Any]) -> str:
                 "Do not turn this into the same buyer motivation or same visual proof as the other static assets."
             ),
         )
+    if quality_contract_line:
+        lines.insert(12, quality_contract_line)
     if product_reference:
         lines.append("Use the supplied product reference image as the source of truth for product appearance.")
     if creative.get("reference_image_urls"):
@@ -1092,6 +1150,8 @@ def _compress_image_prompt(lines: list[str], max_chars: int = IMAGE_PROMPT_MAX_C
             compressed.append(_clip_line(line, 600))
         elif line.startswith("Creative concept: ") or line.startswith("Reason this angle exists: "):
             compressed.append(_clip_line(line, 500))
+        elif line.startswith("Static creative quality contract"):
+            compressed.append(_clip_line(line, 900))
         elif line.startswith("Use this copy only as context"):
             compressed.append(_clip_line(line, 500))
         else:
@@ -1120,6 +1180,7 @@ def _compress_image_prompt(lines: list[str], max_chars: int = IMAGE_PROMPT_MAX_C
                     "Variation rule for this image",
                     "Visual classifier static directive",
                     "Angle diversity contract",
+                    "Static creative quality contract",
                 )
             )
             else low_priority
@@ -1156,6 +1217,7 @@ def _is_high_priority_image_prompt_line(line: str) -> bool:
         "Variation rule for this image",
         "Visual classifier static directive",
         "Angle diversity contract",
+        "Static creative quality contract",
         "Static creative v2 requirement:",
         "Human/product context requirement:",
         "Human context requirement:",
@@ -1176,41 +1238,69 @@ def _is_high_priority_image_prompt_line(line: str) -> bool:
     return line.startswith(prefixes)
 
 
+def _with_static_quality_contract(base: str, creative: dict[str, Any]) -> str:
+    summary = _static_quality_contract_summary(creative)
+    if not summary:
+        return base
+    return f"{base}. Quality brief: {summary}"
+
+
 def _static_variation_contract(creative: dict[str, Any]) -> str:
     set_id = str(creative.get("set_id") or "").upper()
     angle = str(creative.get("angle") or "").upper()
     asset_type = str(creative.get("asset_type") or "")
     if set_id == "C2" or angle in {"PAIN", "PRODUCT_HERO"}:
-        return (
-            "C2 PRODUCT_HERO must show immediate product recognition, clean composition, believable scale, and one visible reason to care; "
-            "avoid crowded lifestyle scenes and avoid using the same setting as C3"
+        return _with_static_quality_contract(
+            (
+                "C2 PRODUCT_HERO must show immediate product recognition, clean composition, believable scale, and one visible reason to care; "
+                "avoid crowded lifestyle scenes and avoid using the same setting as C3"
+            ),
+            creative,
         )
     if set_id == "C3" or angle in {"IDENTITY", "USE_CONTEXT"}:
-        return (
-            "C3 USE_CONTEXT must show the product integrated into a real routine, outfit, or use context; "
-            "use a different location, crop, lighting mood, and body framing than C2"
+        return _with_static_quality_contract(
+            (
+                "C3 USE_CONTEXT must show the product integrated into a real routine, outfit, or use context; "
+                "use a different location, crop, lighting mood, and body framing than C2"
+            ),
+            creative,
         )
     if set_id == "C4" or "detail" in str(creative.get("creative_type") or "").lower():
-        return (
-            "C4 DETAIL_PROOF must be a tight product detail or macro crop, product filling most of the frame; "
-            "avoid full-room lifestyle backgrounds and avoid repeating C2/C3 composition"
+        return _with_static_quality_contract(
+            (
+                "C4 DETAIL_PROOF must be a tight product detail or macro crop, product filling most of the frame; "
+                "avoid full-room lifestyle backgrounds and avoid repeating C2/C3 composition"
+            ),
+            creative,
         )
     if set_id == "C6" or "objection" in str(creative.get("creative_type") or "").lower():
-        return (
-            "C6 PAIN_POINT must make one practical buyer doubt visible through product scale, handling, access, or setup; "
-            "answer the doubt visually without text labels, invented claims, fake before/after, or repeating the C2 hero composition"
+        return _with_static_quality_contract(
+            (
+                "C6 PAIN_POINT must make one practical buyer doubt visible through product scale, handling, access, or setup; "
+                "answer the doubt visually without text labels, invented claims, fake before/after, or repeating the C2 hero composition"
+            ),
+            creative,
         )
     if set_id == "C7" or "anti-hype" in str(creative.get("creative_type") or "").lower():
-        return (
-            "C7 CONTRARIAN_CHECK must feel like a low-polish honest product inspection, not a glossy catalogue ad; "
-            "use a distinct real-world setting, imperfect crop, and a skipped-detail focus without making the product look cheap or altered"
+        return _with_static_quality_contract(
+            (
+                "C7 CONTRARIAN_CHECK must feel like a low-polish honest product inspection, not a glossy catalogue ad; "
+                "use a distinct real-world setting, imperfect crop, and a skipped-detail focus without making the product look cheap or altered"
+            ),
+            creative,
         )
     if set_id == "C5" or asset_type == "carousel_card":
-        return (
-            "C5 buying-guide carousel card must be one step in a sequence; make this card visually distinct by crop, feature focus, "
-            "camera distance, and overlay hierarchy"
+        return _with_static_quality_contract(
+            (
+                "C5 buying-guide carousel card must be one step in a sequence; make this card visually distinct by crop, feature focus, "
+                "camera distance, and overlay hierarchy"
+            ),
+            creative,
         )
-    return "single static creative with distinct product-specific context, not a generic reusable background"
+    return _with_static_quality_contract(
+        "single static creative with distinct product-specific context, not a generic reusable background",
+        creative,
+    )
 
 
 def _category_fidelity_rule(creative: dict[str, Any]) -> str:

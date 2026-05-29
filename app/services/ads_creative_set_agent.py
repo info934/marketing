@@ -19,6 +19,8 @@ STATIC_DROPSHIPPING_REALISM_DIRECTIVE = (
     "minimal and preferably post-production; if rendered, one short safe-area label only."
 )
 
+STATIC_CREATIVE_QUALITY_VERSION = "static_creative_quality_v1"
+
 
 def generate_ad_set(
     product_analysis: dict[str, Any],
@@ -102,6 +104,7 @@ def generate_ad_set(
         static_image_ads = _apply_static_subject_lock_to_static_ads(static_image_ads, static_subject_lock)
     if static_scenario_contract_lock:
         static_image_ads = _apply_static_scenario_contract_to_static_ads(static_image_ads, static_scenario_contract_lock)
+    static_image_ads = _apply_static_quality_contract_to_static_ads(static_image_ads, category)
     static_image_ads = _apply_static_dropshipping_realism_to_static_ads(static_image_ads)
     carousel_ad = _carousel_ad(
         language=language,
@@ -120,6 +123,7 @@ def generate_ad_set(
         carousel_ad = _apply_static_subject_lock_to_carousel(carousel_ad, static_subject_lock)
     if static_scenario_contract_lock:
         carousel_ad = _apply_static_scenario_contract_to_carousel(carousel_ad, static_scenario_contract_lock)
+    carousel_ad = _apply_static_quality_contract_to_carousel(carousel_ad, category)
     carousel_ad = _apply_static_dropshipping_realism_to_carousel(carousel_ad)
     static_creative_director = _static_creative_director_audit(
         static_image_ads=static_image_ads,
@@ -142,6 +146,7 @@ def generate_ad_set(
         "static_subject_lock": static_subject_lock,
         "brand_ads_context": settings.get("company_profile") or product_analysis.get("company_profile") or {},
         "brand_ads_context_directive": brand_context,
+        "static_creative_quality_system": _static_creative_quality_system(),
         "marketing_skill_applied": {
             "source": "coreyhaines31/marketingskills skills/ad-creative",
             "principles": [
@@ -149,6 +154,7 @@ def generate_ad_set(
                 "generate variations per angle instead of near-duplicate copy",
                 "validate copy against platform character limits",
                 "organize assets in platform-ready structures",
+                "assign every static asset a marketing job, scroll-stop mechanism, buyer psychology trigger, and differentiation rule",
             ],
         },
         "angle_multiplier_skill_applied": {
@@ -256,6 +262,152 @@ def _memory_directive(creative_memory: dict[str, Any]) -> str:
     if avoid:
         parts.append("Avoid rejected patterns: " + ", ".join(str(item) for item in avoid[:5]))
     return ". ".join(parts)[:700]
+
+
+def _static_creative_quality_system() -> dict[str, Any]:
+    return {
+        "version": STATIC_CREATIVE_QUALITY_VERSION,
+        "source_skills": [
+            "ad-creative",
+            "ad-angle-multiplier",
+            "scroll-stopping-creative",
+            "marketing-psychology",
+        ],
+        "principles": [
+            "each static asset must have one clear marketing job",
+            "each static asset must use a different scroll-stop mechanism and buyer motivation",
+            "visual prompts must create first-glance feed comprehension before copy does any work",
+            "psychology triggers must be ethical and tied to visible product or offer proof",
+            "no filler variants: if an angle is not materially different, skip it instead of generating padding",
+        ],
+    }
+
+
+def _apply_static_quality_contract_to_static_ads(
+    items: list[dict[str, Any]],
+    category: str,
+) -> list[dict[str, Any]]:
+    updated = []
+    for item in items:
+        updated.append(_apply_static_quality_contract(item, category=category))
+    return updated
+
+
+def _apply_static_quality_contract_to_carousel(
+    carousel: dict[str, Any],
+    category: str,
+) -> dict[str, Any]:
+    copied = _apply_static_quality_contract(carousel, category=category)
+    copied["cards"] = [
+        _apply_static_quality_contract(
+            {
+                **card,
+                "set_id": copied.get("set_id") or "C5",
+                "creative_type": card.get("creative_type") or "Carousel card",
+            },
+            category=category,
+            card_number=card.get("card_number"),
+        )
+        for card in carousel.get("cards") or []
+    ]
+    return copied
+
+
+def _apply_static_quality_contract(
+    item: dict[str, Any],
+    *,
+    category: str,
+    card_number: Any | None = None,
+) -> dict[str, Any]:
+    copied = dict(item)
+    contract = _static_quality_contract_for_item(copied, category=category, card_number=card_number)
+    copied["static_creative_quality_contract"] = contract
+    copied["static_marketing_job"] = contract["marketing_job"]
+    copied["scroll_stop_mechanism"] = contract["scroll_stop_mechanism"]
+    copied["buyer_psychology_trigger"] = contract["buyer_psychology_trigger"]
+    copied["feed_read"] = contract["feed_read"]
+    copied["static_differentiation_rule"] = contract["differentiation_rule"]
+    copied["quality_contract_status"] = "required"
+    copied["why_this_angle"] = _append_once(
+        copied.get("why_this_angle"),
+        (
+            "Static creative quality contract: "
+            f"{contract['marketing_job']} "
+            f"Scroll-stop: {contract['scroll_stop_mechanism']} "
+            f"Psychology: {contract['buyer_psychology_trigger']}"
+        ),
+    )
+    return copied
+
+
+def _static_quality_contract_for_item(
+    item: dict[str, Any],
+    *,
+    category: str,
+    card_number: Any | None = None,
+) -> dict[str, Any]:
+    set_id = str(item.get("set_id") or "").upper()
+    angle = str(item.get("angle") or item.get("slot_angle") or "").upper()
+    creative_type = str(item.get("creative_type") or "").lower()
+    noun = _category_noun(category)
+    category_text = str(category or "product").strip() or "product"
+    if set_id == "C2" or angle == "PRODUCT_HERO":
+        role = "product_first_anchor"
+        marketing_job = f"make the {noun} instantly recognizable and desirable in one paid-social feed glance"
+        scroll_stop = f"clean product-first frame with one concrete visible {noun} cue and strong silhouette"
+        psychology = "cognitive fluency + desire: buyers understand what it is before they read copy"
+        feed_read = f"what it is, why it matters, and whether it is the exact same {noun}"
+        differentiation = "do not become lifestyle context, macro detail, objection check, or anti-hype inspection"
+    elif set_id == "C3" or angle in {"USE_CONTEXT", "IDENTITY"}:
+        role = "real_use_identity"
+        marketing_job = f"make the buyer imagine the {noun} in a believable daily routine"
+        scroll_stop = "real-person context with scale, body/hand relationship, and a lived-in moment"
+        psychology = "identity + availability heuristic: the buyer can picture themselves using it"
+        feed_read = f"who uses it, where it fits, and how the {noun} behaves in real life"
+        differentiation = "must use a different place, crop, light mood, and body framing from C2/C4/C6/C7"
+    elif set_id == "C4" or angle == "DETAIL_PROOF" or "detail" in creative_type:
+        role = "proof_detail"
+        marketing_job = f"answer a product-aware doubt with one visible {category_text} detail"
+        scroll_stop = "tight macro proof crop where the product detail fills most of the frame"
+        psychology = "risk reduction + proof: visible detail lowers uncertainty before click"
+        feed_read = "the exact detail worth checking, without invented labels or claims"
+        differentiation = "no full lifestyle scene, no hero repetition, no generic texture shot"
+    elif set_id == "C6" or angle == "PAIN_POINT" or "objection" in creative_type:
+        role = "buyer_objection_check"
+        marketing_job = f"make one practical hesitation about the {noun} visible and answer it through the scene"
+        scroll_stop = "slightly imperfect real-world check with scale, access, handling, or setup cues"
+        psychology = "loss aversion + regret avoidance: remove the risk of choosing the wrong thing"
+        feed_read = "the buyer doubt being checked and the visible reason it is less risky"
+        differentiation = "do not repeat the C2 hero composition or C3 lifestyle mood; this is the practical check"
+    elif set_id == "C7" or angle == "CONTRARIAN_CHECK" or "anti-hype" in creative_type:
+        role = "anti_hype_trust_check"
+        marketing_job = f"earn trust from ad-skeptical buyers by showing the {noun} without polished ad theatre"
+        scroll_stop = "low-polish phone-camera inspection focused on a skipped detail"
+        psychology = "contrarian trust + pratfall effect: lower polish can feel more honest when product fidelity stays high"
+        feed_read = "this is a grounded product check, not another glossy catalogue frame"
+        differentiation = "must feel intentionally less polished than C2/C3 while keeping the product attractive and exact"
+    else:
+        number = str(card_number or item.get("card_number") or "").strip()
+        role = "buying_guide_step"
+        step = f"card {number}" if number else "one carousel card"
+        marketing_job = f"make {step} a distinct buying-guide step for judging the {noun}"
+        scroll_stop = "one visual decision cue per card with a different crop or proof focus"
+        psychology = "choice architecture + curiosity: reduce decision friction one visible cue at a time"
+        feed_read = "what this card helps the buyer check before clicking through"
+        differentiation = "do not behave like a standalone hero image; every card needs its own proof job"
+    return {
+        "version": STATIC_CREATIVE_QUALITY_VERSION,
+        "role": role,
+        "marketing_job": marketing_job,
+        "scroll_stop_mechanism": scroll_stop,
+        "buyer_psychology_trigger": psychology,
+        "feed_read": feed_read,
+        "differentiation_rule": differentiation,
+        "image_prompt_rule": (
+            "Use this contract as internal creative direction only. It must influence scene, crop, composition, "
+            "and proof focus, but no contract words, labels, set IDs, or psychology terms may appear as visible text."
+        ),
+    }
 
 
 def _brand_ads_context_directive(settings: dict[str, Any], product_analysis: dict[str, Any]) -> str:
@@ -582,11 +734,15 @@ def _static_creative_director_audit(
         / max(1, len(assets))
     )
     average_score = round((dimension_average + asset_average) / 2)
+    contract_assets = [asset for asset in assets if asset.get("quality_contract_status") == "required"]
     return {
-        "version": "static_creative_director_v3",
+        "version": "static_creative_director_v4",
         "status": "ready",
         "category": category,
-        "policy": "Ecommerce static v2: product-first hero, real-use context, proof detail, objection check, anti-hype check, and buying-guide carousel; no duplicate padding, product fidelity and realism remain locked.",
+        "policy": "Paid social static v4: product-first anchor, real-use context, proof detail, objection check, anti-hype trust check, and buying-guide carousel; no duplicate padding, product fidelity and realism remain locked.",
+        "quality_contract_version": STATIC_CREATIVE_QUALITY_VERSION,
+        "quality_contract_coverage": f"{len(contract_assets)}/{len(assets)}",
+        "quality_contract_required": True,
         "max_static_images_policy": "cap_only_no_padding",
         "duplicate_policy": "skip duplicate prompts instead of replacing them with similar filler images",
         "category_rules": _static_category_rules(category),
@@ -613,6 +769,12 @@ def _static_director_asset(item: dict[str, Any]) -> dict[str, Any]:
         "human_context": _detect_human_context(prompt),
         "overlay_text": item.get("overlay_text"),
         "why_this_exists": item.get("why_this_angle") or item.get("purpose"),
+        "marketing_job": item.get("static_marketing_job"),
+        "scroll_stop_mechanism": item.get("scroll_stop_mechanism"),
+        "buyer_psychology_trigger": item.get("buyer_psychology_trigger"),
+        "feed_read": item.get("feed_read"),
+        "differentiation_rule": item.get("static_differentiation_rule"),
+        "quality_contract_status": item.get("quality_contract_status"),
         "visual_diversity_score": _static_director_asset_score(prompt),
     }
 
