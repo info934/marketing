@@ -78,6 +78,9 @@ import type {
   Creative,
   IntelligenceSummary,
   LearningSnapshot,
+  MarketingSkill,
+  MarketingSkillPlan,
+  MarketingSkillRoute,
   OrchestratorSnapshot,
   ParserResult,
   PromptSettings,
@@ -160,6 +163,17 @@ type AgentBrainProfile = {
   role: string;
   color: string;
   palette: [string, string, string];
+};
+type MarketingSkillStackData = {
+  source: string;
+  foundation: MarketingSkill | null;
+  selectedSkills: MarketingSkill[];
+  routes: MarketingSkillRoute[];
+  gateRule: string;
+  gateAction: string;
+  qualityRule: string;
+  coveredSections: string[];
+  missingSections: string[];
 };
 
 const defaultChatGptPromptModel = "openai/gpt-5.4-mini";
@@ -1610,6 +1624,7 @@ export default function CreativeOsApp() {
               approvedScenarioId={approvedScenarioId}
               scenarioMessageId={scenarioMessageId}
               chatResultRun={chatResultRun}
+              latestRun={latestRun}
               dragActive={dragActive}
               status={status}
               busy={busy}
@@ -2188,6 +2203,7 @@ function ChatWorkspace(props: {
   approvedScenarioId: string;
   scenarioMessageId: string;
   chatResultRun: Record<string, unknown> | null;
+  latestRun: Record<string, unknown> | null;
   dragActive: boolean;
   status: string;
   busy: boolean;
@@ -2237,6 +2253,7 @@ function ChatWorkspace(props: {
   const referencePreview = props.form.product_reference_url.trim() || (referenceCount ? `${referenceCount} uploaded asset${referenceCount === 1 ? "" : "s"}` : "");
   const subjectPreview = props.form.product_name.trim() || firstLine(props.form.product_info) || "";
   const brandPreview = props.activeCompany?.name || props.form.company_id || "";
+  const skillStack = marketingSkillStackData(props.latestRun, props.orchestrator);
 
   useEffect(() => {
     timelineEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -2356,6 +2373,8 @@ function ChatWorkspace(props: {
                         </div>
                       )}
                     </div>
+
+                    <MarketingSkillStackCard stack={skillStack} compact />
 
                     <details className="rounded-md border bg-white p-3">
                       <summary className="cursor-pointer text-xs font-semibold text-slate-700">Manual correction</summary>
@@ -2680,6 +2699,8 @@ function ChatWorkspace(props: {
               ))}
             </div>
 
+            <MarketingSkillStackCard stack={skillStack} compact />
+
             <div className="rounded-md border bg-slate-50 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div>
@@ -2768,6 +2789,68 @@ function BriefSnapshotItem(props: { label: string; value: string; multiline?: bo
       >
         {props.value}
       </p>
+    </div>
+  );
+}
+
+function MarketingSkillStackCard(props: { stack: MarketingSkillStackData | null; compact?: boolean }) {
+  const stack = props.stack;
+  if (!stack) return null;
+  const routes = stack.routes.slice(0, props.compact ? 3 : 5);
+  const skills = stack.selectedSkills.slice(0, props.compact ? 8 : 14);
+  return (
+    <div className="rounded-md border border-emerald-200 bg-emerald-50/45 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-emerald-950">Marketing Skill Stack</p>
+          <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-emerald-900/75">
+            {stack.source || "Corey Haines marketing skills"} routed into orchestrator, UGC, static ads and provider gate.
+          </p>
+        </div>
+        <Badge variant={stack.gateAction === "block_generation" ? "secondary" : "outline"}>{stack.gateAction || "plan gate"}</Badge>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-xs">
+        <div className="rounded-md border border-emerald-200 bg-white px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold text-slate-800">Foundation</span>
+            <Badge variant="outline">{skillLabel(stack.foundation) || "product-marketing"}</Badge>
+          </div>
+          <p className="mt-1 line-clamp-2 leading-5 text-muted-foreground">
+            {stack.gateRule || "Bad or unapproved creative plans stay blocked before provider generation."}
+          </p>
+          <p className="mt-1 line-clamp-2 leading-5 text-muted-foreground">{stack.qualityRule}</p>
+        </div>
+
+        {!!skills.length && (
+          <div className="flex flex-wrap gap-1.5">
+            {skills.map((skill) => (
+              <span key={skill.id} className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-[11px] font-medium text-emerald-950">
+                {skillLabel(skill)}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {!!routes.length && (
+          <div className="grid gap-2">
+            {routes.map((route, index) => (
+              <div key={route.specialist_id || route.contract || `route-${index}`} className="rounded-md border bg-white px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-slate-800">{specialistDisplayLabel(route.specialist_id)}</span>
+                  <span className="text-[11px] text-muted-foreground">{(route.skills || []).map(skillLabel).slice(0, 3).join(" + ")}</span>
+                </div>
+                <p className="mt-1 line-clamp-2 leading-5 text-muted-foreground">{route.contract || "Uses selected marketing skills for this specialist."}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <SignalRow label="Covered" value={stack.coveredSections.length ? stack.coveredSections.slice(0, 4).join(", ") : "runtime brief"} />
+          <SignalRow label="Missing" value={stack.missingSections.length ? stack.missingSections.slice(0, 3).join(", ") : "none"} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -6888,6 +6971,212 @@ function isVideoReadyProductReference(value: string) {
 function normalizeRunPayload(payload: Record<string, unknown> | null) {
   if (!payload) return null;
   return readRecord(payload.generation_run) || payload;
+}
+
+function marketingSkillStackData(run: Record<string, unknown> | null, orchestrator: OrchestratorSnapshot | null): MarketingSkillStackData | null {
+  const plan = marketingSkillPlanFromRun(run, orchestrator);
+  const registry = orchestrator?.marketing_skill_registry || null;
+  const plannedRoutes = marketingRoutesFromUnknown(plan?.active_routes);
+  const fallbackRoutes = orchestratorMarketingRoutes(orchestrator, registry);
+  const routes = uniqueMarketingRoutes(plannedRoutes.length ? plannedRoutes : fallbackRoutes);
+  const selectedSkills = uniqueMarketingSkills([
+    ...marketingSkillsFromUnknown(plan?.selected_skills),
+    ...routes.flatMap((route) => route.skills || []),
+    ...(registry?.foundation_skill ? [registry.foundation_skill] : []),
+  ]);
+  const foundationContext = readRecord(plan?.foundation_context) || {};
+  const foundation = marketingSkillFromUnknown(foundationContext.source_skill) || registry?.foundation_skill || selectedSkills.find((skill) => skill.id === "product-marketing") || null;
+  const gate = readRecord(plan?.generation_gate) || {};
+  const quality = readRecord(plan?.creative_quality_contract) || {};
+  const coveredSections = stringList(foundationContext.covered_sections);
+  const missingSections = stringList(foundationContext.missing_sections);
+  if (!selectedSkills.length && !routes.length && !foundation) return null;
+  return {
+    source: String(plan?.source || registry?.source || "coreyhaines31/marketingskills"),
+    foundation,
+    selectedSkills,
+    routes,
+    gateRule: String(gate.rule || "Provider execution only receives approved, scenario-safe creative plans."),
+    gateAction: String(gate.bad_or_unapproved_plan_action || "block_generation"),
+    qualityRule: String(quality.rule || "Every generated ad asset must map to a marketing job, buyer motivation, proof cue, and test hypothesis."),
+    coveredSections,
+    missingSections,
+  };
+}
+
+function marketingSkillPlanFromRun(run: Record<string, unknown> | null, orchestrator: OrchestratorSnapshot | null): MarketingSkillPlan | null {
+  const finalOutput = readRecord(run?.final_output);
+  const inputSnapshot = readRecord(run?.input_snapshot);
+  const ugcStrategy = readRecord(finalOutput?.ugc_strategy);
+  const adsCreativeSet = readRecord(finalOutput?.ads_creative_set);
+  const candidates: unknown[] = [
+    orchestrator?.active_marketing_skill_plan,
+    run?.marketing_skill_plan,
+    finalOutput?.marketing_skill_plan,
+    ugcStrategy?.marketing_skill_plan,
+    adsCreativeSet?.marketing_skill_plan,
+    inputSnapshot?.marketing_skill_plan,
+  ];
+  for (const candidate of candidates) {
+    const plan = readRecord(candidate) as MarketingSkillPlan | null;
+    if (
+      plan &&
+      (plan.version || plan.source || plan.selected_skills?.length || plan.active_routes?.length || plan.foundation_context || plan.generation_gate)
+    ) {
+      return plan;
+    }
+  }
+  const registry = orchestrator?.marketing_skill_registry;
+  if (!registry) return null;
+  return {
+    version: registry.version,
+    source: registry.source,
+    source_url: registry.source_url,
+    foundation_context: {
+      source_skill: registry.foundation_skill,
+      rule: registry.catalog_principle,
+    },
+    selected_skills: uniqueMarketingSkills([
+      ...(registry.foundation_skill ? [registry.foundation_skill] : []),
+      ...orchestratorMarketingRoutes(orchestrator, registry).flatMap((route) => route.skills || []),
+    ]),
+    active_routes: orchestratorMarketingRoutes(orchestrator, registry),
+    generation_gate: {
+      bad_or_unapproved_plan_action: "block_generation",
+      rule: "Bad or unapproved plans do not reach provider generation.",
+    },
+  };
+}
+
+function marketingRoutesFromUnknown(value: unknown): MarketingSkillRoute[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        const route = readRecord(item);
+        if (!route) return null;
+        return normalizeMarketingRoute(route);
+      })
+      .filter((item): item is MarketingSkillRoute => Boolean(item));
+  }
+  const record = readRecord(value);
+  if (!record) return [];
+  return Object.entries(record)
+    .map(([specialistId, routeValue]) => {
+      const route = readRecord(routeValue);
+      if (!route) return null;
+      return normalizeMarketingRoute({ ...route, specialist_id: route.specialist_id || specialistId });
+    })
+    .filter((item): item is MarketingSkillRoute => Boolean(item));
+}
+
+function normalizeMarketingRoute(route: Record<string, unknown>): MarketingSkillRoute {
+  return {
+    specialist_id: String(route.specialist_id || route.id || ""),
+    skills: marketingSkillsFromUnknown(route.skills),
+    contract: String(route.contract || ""),
+  };
+}
+
+function orchestratorMarketingRoutes(orchestrator: OrchestratorSnapshot | null, registry: OrchestratorSnapshot["marketing_skill_registry"] | null): MarketingSkillRoute[] {
+  const visibleSpecialists = [
+    ...(orchestrator?.phases || []).flatMap((phase) => phase.specialists || []),
+    ...(orchestrator?.specialists || []).filter((specialist) => specialist.visible),
+  ];
+  return visibleSpecialists
+    .map((specialist) => {
+      const registrySkills = registry?.specialist_skill_map?.[specialist.id] || [];
+      return {
+        specialist_id: specialist.id,
+        skills: specialist.marketing_skills?.length ? specialist.marketing_skills : registrySkills,
+        contract: specialist.skill_contract || specialist.role,
+      };
+    })
+    .filter((route) => (route.skills || []).length || route.contract);
+}
+
+function marketingSkillsFromUnknown(value: unknown): MarketingSkill[] {
+  return recordList(value)
+    .map(marketingSkillFromUnknown)
+    .filter((skill): skill is MarketingSkill => Boolean(skill));
+}
+
+function marketingSkillFromUnknown(value: unknown): MarketingSkill | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const id = String(record.id || record.source_path || "").trim();
+  if (!id) return null;
+  return {
+    id,
+    version: optionalString(record.version),
+    category: optionalString(record.category),
+    purpose: optionalString(record.purpose),
+    source: optionalString(record.source),
+    source_path: optionalString(record.source_path),
+  };
+}
+
+function uniqueMarketingSkills(skills: MarketingSkill[]): MarketingSkill[] {
+  const seen = new Set<string>();
+  return skills.filter((skill) => {
+    const id = String(skill.id || "").trim();
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function uniqueMarketingRoutes(routes: MarketingSkillRoute[]): MarketingSkillRoute[] {
+  const priority = ["marketing_skill_router", "ugc_video_scenarios", "static_ad_concepts", "scenario_integrity", "provider_validation", "creative_review"];
+  const byId = new Map<string, MarketingSkillRoute>();
+  routes.forEach((route, index) => {
+    const id = route.specialist_id || `route_${index}`;
+    if (!byId.has(id)) byId.set(id, { ...route, skills: uniqueMarketingSkills(route.skills || []) });
+  });
+  return [...byId.values()].sort((a, b) => {
+    const aIndex = priority.indexOf(a.specialist_id || "");
+    const bIndex = priority.indexOf(b.specialist_id || "");
+    return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex);
+  });
+}
+
+function skillLabel(skill: MarketingSkill | null | undefined) {
+  const id = String(skill?.id || "").trim();
+  if (!id) return "";
+  return id
+    .replace(/^skills\//, "")
+    .split("-")
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(" ");
+}
+
+function specialistDisplayLabel(value: unknown) {
+  const key = String(value || "");
+  const labels: Record<string, string> = {
+    marketing_skill_router: "Skill router",
+    brief_parser: "Brief parser",
+    brand_context: "Brand context",
+    audience_strategy: "Audience strategy",
+    hook_strategy: "Hook strategy",
+    claim_safety: "Claim safety",
+    ugc_video_scenarios: "UGC scenarios",
+    static_ad_concepts: "Static concepts",
+    scenario_integrity: "Scenario gate",
+    provider_validation: "Provider gate",
+    video_generator: "Video provider",
+    static_image_generator: "Image provider",
+    creative_review: "Creative review",
+  };
+  return labels[key] || key.replace(/_/g, " ") || "Specialist route";
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function optionalString(value: unknown): string | undefined {
+  const text = String(value || "").trim();
+  return text || undefined;
 }
 
 function clampProgress(value: unknown) {

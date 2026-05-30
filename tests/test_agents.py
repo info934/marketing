@@ -8,6 +8,7 @@ from app.services import (
     compliance_guard,
     competitor_strategy_agent,
     content_prompt_engineer_agent,
+    creative_orchestrator,
     marketing_skill_router,
     product_fidelity_guard,
     prompt_defaults,
@@ -63,6 +64,45 @@ def test_marketing_skill_router_builds_product_context_and_routes():
     assert plan["generation_gate"]["bad_or_unapproved_plan_action"] == "block_generation"
     assert "audience" in plan["foundation_context"]["covered_sections"]
     assert marketing_skill_router.compact_plan(plan)["selected_skills"]
+
+
+def test_orchestrator_snapshot_exposes_active_marketing_skill_plan():
+    plan = {
+        "version": "marketing_skill_router_v1",
+        "source": "coreyhaines31/marketingskills",
+        "mode": "ecommerce",
+        "platform": "meta",
+        "generation_mode": "both",
+        "foundation_context": {
+            "source_skill": {"id": "product-marketing"},
+            "company_id": "kimlondon",
+            "product_name": "The Roomiest Bum Bag",
+        },
+        "selected_skills": [{"id": "product-marketing"}, {"id": "ad-creative"}],
+        "active_routes": [
+            {
+                "specialist_id": "static_ad_concepts",
+                "skills": [{"id": "ad-creative"}, {"id": "image"}],
+                "contract": "Create visually distinct Meta static ad concepts.",
+            }
+        ],
+        "generation_gate": {"bad_or_unapproved_plan_action": "block_generation"},
+        "creative_quality_contract": {"rule": "Every generated ad asset must map to a marketing job."},
+    }
+
+    snapshot = creative_orchestrator.snapshot(
+        {
+            "run_id": "run_ecommerce_test",
+            "status": "planning",
+            "current_stage": "creative_plan",
+            "final_output": {"marketing_skill_plan": plan},
+        }
+    )
+
+    active_plan = snapshot["active_marketing_skill_plan"]
+    assert active_plan["source"] == "coreyhaines31/marketingskills"
+    assert active_plan["foundation_context"]["source_skill"]["id"] == "product-marketing"
+    assert active_plan["generation_gate"]["bad_or_unapproved_plan_action"] == "block_generation"
 
 
 def test_agents_return_safe_shapes_for_minimal_input(tmp_path):

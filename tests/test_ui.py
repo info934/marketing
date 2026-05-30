@@ -97,6 +97,17 @@ def test_react_new_campaign_simple_chat_mode_is_available():
     assert "AI Brief Parser" in app_js
 
 
+def test_next_orchestrator_surfaces_marketing_skill_stack():
+    page_tsx = Path("frontend/app/page.tsx").read_text(encoding="utf-8")
+    types_ts = Path("frontend/lib/types.ts").read_text(encoding="utf-8")
+
+    assert "MarketingSkillStackCard" in page_tsx
+    assert "marketingSkillStackData" in page_tsx
+    assert "Plan gate" in page_tsx
+    assert "active_marketing_skill_plan" in types_ts
+    assert "marketing_skill_registry" in types_ts
+
+
 def test_react_index_is_default_app_shell():
     html = render_react_index()
 

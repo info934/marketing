@@ -80,6 +80,8 @@ export type OrchestratorSpecialist = {
   role: string;
   modules?: string[];
   visible?: boolean;
+  marketing_skills?: MarketingSkill[];
+  skill_contract?: string;
 };
 
 export type OrchestratorPhase = {
@@ -96,12 +98,54 @@ export type OrchestratorSnapshot = {
   version: string;
   name: string;
   principles: string[];
+  marketing_skill_registry?: MarketingSkillRegistry;
+  active_marketing_skill_plan?: MarketingSkillPlan;
   phases: OrchestratorPhase[];
   specialists: OrchestratorSpecialist[];
   current_phase: string;
   run_id?: string;
   run_status: string;
   next_action: string;
+};
+
+export type MarketingSkill = {
+  id: string;
+  version?: string;
+  category?: string;
+  purpose?: string;
+  source?: string;
+  source_path?: string;
+};
+
+export type MarketingSkillRoute = {
+  specialist_id?: string;
+  skills?: MarketingSkill[];
+  contract?: string;
+};
+
+export type MarketingSkillPlan = {
+  version?: string;
+  source?: string;
+  source_url?: string;
+  mode?: string;
+  platform?: string;
+  generation_mode?: string;
+  foundation_context?: Record<string, unknown>;
+  selected_skills?: MarketingSkill[];
+  active_routes?: MarketingSkillRoute[];
+  generation_gate?: Record<string, unknown>;
+  creative_quality_contract?: Record<string, unknown>;
+};
+
+export type MarketingSkillRegistry = {
+  version?: string;
+  source?: string;
+  source_url?: string;
+  catalog_principle?: string;
+  foundation_skill?: MarketingSkill;
+  skills?: MarketingSkill[];
+  specialist_skill_map?: Record<string, MarketingSkill[]>;
+  phase_skill_map?: Record<string, MarketingSkill[]>;
 };
 
 export type Avatar = {

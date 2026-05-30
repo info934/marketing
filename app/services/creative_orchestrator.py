@@ -208,6 +208,7 @@ def snapshot(run: dict[str, Any] | None = None) -> dict[str, Any]:
         "run_id": (run or {}).get("run_id"),
         "run_status": (run or {}).get("status") or "idle",
         "phases": phases,
+        "active_marketing_skill_plan": _active_marketing_skill_plan(run),
         "next_action": _next_action(run, current_phase),
     }
 
@@ -237,6 +238,23 @@ def _with_skill_route(specialist: dict[str, Any]) -> dict[str, Any]:
         "marketing_skills": route.get("skills") or [],
         "skill_contract": route.get("contract"),
     }
+
+
+def _active_marketing_skill_plan(run: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(run, dict):
+        return {}
+    final_output = run.get("final_output") if isinstance(run.get("final_output"), dict) else {}
+    input_snapshot = run.get("input_snapshot") if isinstance(run.get("input_snapshot"), dict) else {}
+    candidates = [
+        final_output.get("marketing_skill_plan") if isinstance(final_output, dict) else {},
+        ((final_output.get("ugc_strategy") or {}).get("marketing_skill_plan") if isinstance(final_output.get("ugc_strategy"), dict) else {}),
+        ((final_output.get("ads_creative_set") or {}).get("marketing_skill_plan") if isinstance(final_output.get("ads_creative_set"), dict) else {}),
+        input_snapshot.get("marketing_skill_plan") if isinstance(input_snapshot, dict) else {},
+    ]
+    for candidate in candidates:
+        if isinstance(candidate, dict) and candidate.get("version"):
+            return marketing_skill_router.compact_plan(candidate)
+    return {}
 
 
 def _phase_status(phase_id: str, current_phase: str, terminal_status: str, blocked: bool) -> str:

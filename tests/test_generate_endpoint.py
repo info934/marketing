@@ -384,6 +384,7 @@ def test_orchestrator_exposes_simple_pipeline_and_specialist_skills(monkeypatch,
     plan_phase = next(phase for phase in payload["phases"] if phase["id"] == "plan")
     assert {specialist["id"] for specialist in plan_phase["specialists"]} >= {"ugc_video_scenarios", "static_ad_concepts"}
     assert payload["current_phase"] == "brief"
+    assert payload["active_marketing_skill_plan"] == {}
 
 
 def test_marketing_skills_endpoint_exposes_corey_catalog(monkeypatch, tmp_path):
