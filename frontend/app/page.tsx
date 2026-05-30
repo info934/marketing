@@ -3285,6 +3285,8 @@ function DashboardWorkspace(props: {
   onCancelRun: () => void;
 }) {
   const counts = props.intelligence?.counts || {};
+  const memoryTotal = memoryCountsTotal(counts);
+  const cleanMemoryMode = memoryTotal === 0 && Boolean(props.intelligence?.memory_epoch || props.learning?.memory_epoch);
 
   return (
     <WorkspaceScroll>
@@ -3303,6 +3305,25 @@ function DashboardWorkspace(props: {
           <MetricCard label="Creatives" value={counts.creatives ?? props.creatives.length} meta="assets" />
           <MetricCard label="Ratings" value={counts.ratings ?? 0} meta="learning" />
         </div>
+
+        {cleanMemoryMode && (
+          <Card className="border-teal-200 bg-teal-50/80">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 h-5 w-5 text-teal-800" />
+                <div>
+                  <p className="text-sm font-semibold text-teal-950">Clean memory mode</p>
+                  <p className="text-sm leading-6 text-teal-900">
+                    Legacy RAG data is not used. The portal will learn only from new approved campaigns, ratings and performance imports.
+                  </p>
+                </div>
+              </div>
+              <Badge variant="outline" className="border-teal-300 bg-white/70 text-teal-950">
+                {props.intelligence?.memory_epoch || props.learning?.memory_epoch || "new-agent-data-only"}
+              </Badge>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-2 md:grid-cols-[1fr_220px]">
           <Card>
@@ -4020,9 +4041,29 @@ function PromptLabWorkspace(props: {
 }
 
 function AnalyticsWorkspace(props: { intelligence: IntelligenceSummary | null; learning: LearningSnapshot | null; creatives: Creative[] }) {
+  const counts = props.intelligence?.counts || props.learning?.counts || {};
+  const cleanMemoryMode = memoryCountsTotal(counts) === 0 && Boolean(props.intelligence?.memory_epoch || props.learning?.memory_epoch);
   return (
     <WorkspaceScroll>
       <div className="mx-auto grid max-w-5xl gap-4">
+        {cleanMemoryMode && (
+          <Card className="border-teal-200 bg-teal-50/80">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 h-5 w-5 text-teal-800" />
+                <div>
+                  <p className="text-sm font-semibold text-teal-950">Clean RAG start</p>
+                  <p className="text-sm leading-6 text-teal-900">
+                    Old workflow signals are cleared. New recommendations appear only after this portal stores fresh ratings or performance data.
+                  </p>
+                </div>
+              </div>
+              <Badge variant="outline" className="border-teal-300 bg-white/70 text-teal-950">
+                {props.intelligence?.memory_epoch || props.learning?.memory_epoch || "new-agent-data-only"}
+              </Badge>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>RAG learning status</CardTitle>
@@ -6307,6 +6348,14 @@ function modeLabel(mode: string) {
   if (mode === "video") return "Jen video";
   if (mode === "static") return "Jen statiky";
   return "Video + statiky";
+}
+
+function memoryCountsTotal(counts: Record<string, number> | undefined) {
+  if (!counts) return 0;
+  return ["products", "campaigns", "creatives", "ratings", "performance_records"].reduce(
+    (total, key) => total + Number(counts[key] || 0),
+    0,
+  );
 }
 
 function hasApprovedCreativePlan(form: CampaignForm, scenarioDrafts: ScenarioDraft[], approvedScenarioId: string) {

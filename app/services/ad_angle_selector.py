@@ -106,7 +106,7 @@ def select(
         "slot_selection": slot_selection,
         "rules": [
             "If memory is weak, choose by slot role prior.",
-            "If memory has winners, boost matching family, hook, visual direction, and legacy angle signals.",
+            "If new memory has winners, boost matching family, hook, visual direction, and validated angle signals.",
             "If memory has rejects, penalize matching family, hook, and avoid-pattern text.",
             "If competitor strategy is supplied, use it only as a weak pattern-level bias for this generation run.",
             "Do not override product facts, language, compliance, or product/avatar fidelity.",

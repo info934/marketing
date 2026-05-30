@@ -374,7 +374,7 @@ PROMPT_SOURCE_INVENTORY: dict[str, Any] = {
         },
         {
             "layer": "Ad Angle Selector",
-            "source": "ad_angle_multiplier, performance memory, creative_memory_rag, seed category priors, and C1-C5 slot roles",
+            "source": "ad_angle_multiplier, new performance memory, creative_memory_rag, and C1-C5 slot roles",
             "editable_in_ui": "indirectly via ratings, performance import, product category, platform, market and language",
             "output_fields": [
                 "ad_angle_selector.slot_selection",

@@ -45,6 +45,24 @@ def test_planning_watchdog_uses_fallback_on_timeout():
     assert result == {"status": "fallback"}
 
 
+def test_performance_memory_clean_start_has_no_legacy_seed_priors(tmp_path):
+    memory_path = tmp_path / "missing_performance_memory.json"
+
+    memory = performance_memory.load_memory(memory_path)
+    insights = performance_memory.select_insights(
+        {"likely_product_category": "handbag"},
+        {"platform": "meta", "market": "UK"},
+        path=memory_path,
+    )
+
+    assert memory["version"] == "performance_memory_v2_clean_start"
+    assert memory["seed_insights"] == {}
+    assert memory["legacy_seed_priors_enabled"] is False
+    assert insights["seed_insights"] == {}
+    assert insights["metric_bias"]["source"] == "clean_start"
+    assert "legacy workflow priors" in insights["metric_bias"]["instruction"]
+
+
 def test_brief_intake_phase_keeps_brand_static_refs_and_visual_output(monkeypatch, tmp_path):
     _configure_tmp_dirs(monkeypatch, tmp_path)
     product_image = tmp_path / "product.jpg"

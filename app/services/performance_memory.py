@@ -9,29 +9,20 @@ from app import config
 
 
 MEMORY_PATH = config.BASE_DIR / "data" / "performance_memory.json"
+MEMORY_VERSION = "performance_memory_v2_clean_start"
 
 DEFAULT_MEMORY = {
-    "version": "performance_memory_v1",
+    "version": MEMORY_VERSION,
     "records": [],
-    "seed_insights": {
-        "handbag": {
-            "winning_archetypes": ["practicality", "office", "travel", "elegance"],
-            "shot_types": ["on shoulder", "in hand", "outfit scale", "opening detail"],
-            "hook_patterns": ["detail-first", "daily context", "scale check", "polished photo skepticism"],
-            "overlay_patterns": ["Outfit scale", "Handle detail", "Daily carry", "Check the shape"],
-        },
-        "shoes": {
-            "winning_archetypes": ["comfort", "aesthetic", "minimalist", "sporty"],
-            "shot_types": ["worn side profile", "sole edge close-up", "walking-speed detail", "outfit mirror"],
-            "hook_patterns": ["worn-not-table", "side profile first", "detail most ads skip", "outfit fit"],
-            "overlay_patterns": ["Side profile", "Worn detail", "Sole close-up", "Outfit check"],
-        },
-        "apparel": {
-            "winning_archetypes": ["aesthetic", "minimalist", "office", "fashion"],
-            "shot_types": ["mirror worn shot", "garment movement", "seam close-up", "outfit layering"],
-            "hook_patterns": ["worn cut first", "garment movement", "not a flat lay", "styling check"],
-            "overlay_patterns": ["Check the cut", "Garment movement", "Worn in context", "Styling check"],
-        },
+    "generated_candidates": [],
+    "seed_insights": {},
+    "reset_reason": "Clean start for the new creative marketing agent portal. Old workflow learning data is ignored.",
+    "reset_at": "2026-05-30",
+    "legacy_seed_priors_enabled": False,
+    "memory_policy": {
+        "mode": "new_agent_data_only",
+        "legacy_workflow_data": "ignored",
+        "rule": "Use only records, ratings, and performance imported after the clean portal reset.",
     },
 }
 
@@ -44,9 +35,12 @@ def load_memory(path: Path | None = None) -> dict[str, Any]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             return json.loads(json.dumps(DEFAULT_MEMORY))
-        payload.setdefault("version", "performance_memory_v1")
+        payload.setdefault("version", MEMORY_VERSION)
         payload.setdefault("records", [])
-        payload.setdefault("seed_insights", DEFAULT_MEMORY["seed_insights"])
+        payload.setdefault("generated_candidates", [])
+        payload["seed_insights"] = {}
+        payload["legacy_seed_priors_enabled"] = False
+        payload.setdefault("memory_policy", DEFAULT_MEMORY["memory_policy"])
         return payload
     except Exception:
         return json.loads(json.dumps(DEFAULT_MEMORY))
@@ -85,12 +79,14 @@ def select_insights(
         "matching_record_count": len(records),
         "winner_count": len(winners),
         "seed_insights": seed,
+        "legacy_seed_priors_enabled": False,
+        "memory_policy": memory.get("memory_policy") or DEFAULT_MEMORY["memory_policy"],
         "winning_hooks": _top_values(winners, "hook"),
         "winning_shot_types": _top_values(winners, "shot_type"),
         "winning_overlays": _top_values(winners, "overlay_text"),
         "metric_bias": _metric_bias(winners),
         "learning_rule": (
-            "Use real winning records first. If no records exist, use seed insights as category psychology priors."
+            "Use only validated records from the new agent portal. If no records exist, diversify without legacy memory priors."
         ),
     }
 
@@ -189,8 +185,8 @@ def _top_values(records: list[dict[str, Any]], key: str, limit: int = 5) -> list
 def _metric_bias(winners: list[dict[str, Any]]) -> dict[str, Any]:
     if not winners:
         return {
-            "source": "seed_insights",
-            "instruction": "No winning records yet; diversify hooks and shots across category archetypes.",
+            "source": "clean_start",
+            "instruction": "No validated new-version winners yet; diversify hooks and shots without legacy workflow priors.",
         }
     return {
         "source": "winning_records",

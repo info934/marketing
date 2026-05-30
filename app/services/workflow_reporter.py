@@ -403,7 +403,7 @@ def _workflow_stages(
             "ad_angle_selector",
             "Ad Angle Selector",
             "pass" if (angle_selector.get("slot_selection") or {}) else "warning",
-            "Scores angle options for C1-C5 using asset role, Creative Memory winners, avoid patterns, and seed priors.",
+            "Scores angle options for C1-C5 using asset role plus new Creative Memory winners and avoid patterns.",
             _angle_selector_summary(angle_selector),
             "ugc_strategy.ad_angle_selector",
         ),

@@ -224,6 +224,8 @@ export type PromptSettings = {
 };
 
 export type IntelligenceSummary = {
+  memory_epoch?: string;
+  memory_policy?: Record<string, unknown>;
   counts?: Record<string, number>;
   learning_loop?: {
     status?: string;
@@ -238,6 +240,8 @@ export type IntelligenceSummary = {
 };
 
 export type LearningSnapshot = {
+  memory_epoch?: string;
+  memory_policy?: Record<string, unknown>;
   status?: string;
   counts?: Record<string, number>;
   winning_patterns?: string[];

@@ -44,6 +44,8 @@ def guidance_for_brief(brief: dict[str, Any]) -> dict[str, Any]:
         "status": "ready",
         "agent": "Prompt Learning Agent",
         "workspace": workspace,
+        "memory_epoch": preview.get("memory_epoch") or snapshot.get("memory_epoch"),
+        "memory_policy": preview.get("memory_policy") or snapshot.get("memory_policy") or {},
         "app_mode": "finance_personal_brand" if workspace == "finance" else "ecommerce",
         "query": {
             "product_name": preview.get("product_name"),
@@ -79,6 +81,8 @@ def learning_snapshot(workspace: str = "") -> dict[str, Any]:
     return _repair_payload({
         "version": "creative_memory_learning_service_v1",
         "workspace": intelligence.get("workspace") or workspace or "all",
+        "memory_epoch": intelligence.get("memory_epoch"),
+        "memory_policy": intelligence.get("memory_policy") or {},
         "status": "active",
         "counts": intelligence.get("counts") or {},
         "learning_loop": intelligence.get("learning_loop") or {},
@@ -136,7 +140,7 @@ def _prompt_insert(
                 "clear educational framing, modern infographics, and compliance-safe wording."
             )
         return (
-            "No ecommerce memory yet. Use category presets, diversify human context and shot type, "
+            "No ecommerce memory yet. Diversify human context and shot type from the approved mission contract, "
             "keep product fidelity strict, and store rating/performance after review."
         )
     parts = []

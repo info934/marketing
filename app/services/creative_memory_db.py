@@ -13,7 +13,9 @@ from app.services import embedding_service
 from app.services.text_utils import detect_category, safe_slug, split_notes, unique_preserve_order
 
 
-SCHEMA_VERSION = "creative_memory_sqlite_v1"
+SCHEMA_VERSION = "creative_memory_sqlite_v2_clean_agent"
+CURRENT_MEMORY_EPOCH = "creative_agent_v2_clean_2026_05_30"
+MEMORY_TABLES = ["performance", "ratings", "knowledge_items", "creatives", "campaigns", "products"]
 
 
 def init_db(path: str | Path | None = None) -> Path:
@@ -142,6 +144,11 @@ def init_db(path: str | Path | None = None) -> Path:
                 ON knowledge_items(workspace, category, market, platform, status, angle);
             CREATE INDEX IF NOT EXISTS idx_knowledge_creative
                 ON knowledge_items(creative_id, source_type);
+
+            CREATE TABLE IF NOT EXISTS memory_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
         _ensure_column(conn, "products", "workspace", "TEXT DEFAULT 'ecommerce'")
@@ -156,6 +163,7 @@ def init_db(path: str | Path | None = None) -> Path:
         _ensure_column(conn, "knowledge_items", "embedding_provider", "TEXT")
         _ensure_column(conn, "knowledge_items", "embedding_status", "TEXT")
         _ensure_column(conn, "knowledge_items", "embedding_dimensions", "INTEGER")
+        _ensure_memory_epoch(conn)
     return db_path
 
 
@@ -166,6 +174,38 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition
     }
     if column not in existing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _ensure_memory_epoch(conn: sqlite3.Connection) -> None:
+    current = conn.execute(
+        "SELECT value FROM memory_meta WHERE key = 'memory_epoch'"
+    ).fetchone()
+    current_epoch = str(current["value"]) if current else ""
+    if current_epoch == CURRENT_MEMORY_EPOCH:
+        return
+    if current_epoch or _memory_row_count(conn) > 0:
+        _clear_memory_tables(conn)
+    conn.executemany(
+        "INSERT OR REPLACE INTO memory_meta (key, value) VALUES (?, ?)",
+        [
+            ("memory_epoch", CURRENT_MEMORY_EPOCH),
+            ("schema_version", SCHEMA_VERSION),
+            ("legacy_workflow_data", "cleared_or_ignored"),
+            ("reset_reason", "Clean start for the creative marketing agent portal."),
+        ],
+    )
+
+
+def _memory_row_count(conn: sqlite3.Connection) -> int:
+    total = 0
+    for table in MEMORY_TABLES:
+        total += int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+    return total
+
+
+def _clear_memory_tables(conn: sqlite3.Connection) -> None:
+    for table in MEMORY_TABLES:
+        conn.execute(f"DELETE FROM {table}")
 
 
 def save_generation(final_output: dict[str, Any], path: str | Path | None = None) -> dict[str, Any]:
@@ -267,6 +307,7 @@ def save_generation(final_output: dict[str, Any], path: str | Path | None = None
     )
     return {
         "version": SCHEMA_VERSION,
+        "memory_epoch": CURRENT_MEMORY_EPOCH,
         "status": "saved",
         "db_path": str(db_path),
         "product_id": product_id,
@@ -397,6 +438,11 @@ def retrieve_guidance(
     )
     return {
         "version": "creative_memory_rag_v1",
+        "memory_epoch": CURRENT_MEMORY_EPOCH,
+        "memory_policy": {
+            "mode": "new_agent_data_only",
+            "legacy_workflow_data": "cleared_or_ignored",
+        },
         "status": "active",
         "storage": "sqlite_embedding_pgvector_ready",
         "query": {
@@ -447,6 +493,8 @@ def preview_guidance(brief: dict[str, Any], path: str | Path | None = None) -> d
     guidance = retrieve_guidance(product_analysis=product_analysis, settings=settings, path=path)
     return {
         "version": "creative_intelligence_preview_v1",
+        "memory_epoch": CURRENT_MEMORY_EPOCH,
+        "memory_policy": guidance.get("memory_policy") or {},
         "status": "ready",
         "product_name": product_analysis["product_name"],
         "detected_category": product_analysis["likely_product_category"],
@@ -942,6 +990,11 @@ def intelligence_summary(workspace: str = "", path: str | Path | None = None) ->
         ).fetchall()
     return {
         "version": SCHEMA_VERSION,
+        "memory_epoch": CURRENT_MEMORY_EPOCH,
+        "memory_policy": {
+            "mode": "new_agent_data_only",
+            "legacy_workflow_data": "cleared_or_ignored",
+        },
         "db_path": str(db_path),
         "workspace": workspace_filter or "all",
         "counts": counts,
@@ -1515,7 +1568,7 @@ def _prompt_guidance(
     winning_patterns = [item for item in (_clean_memory_pattern(pattern) for pattern in winning_patterns) if item]
     avoid_patterns = [item for item in (_clean_memory_pattern(pattern) for pattern in avoid_patterns) if item]
     if not winning_patterns and not avoid_patterns:
-        return "No historical winners yet; use category presets, diversify hooks and shots, and store user ratings after review."
+        return "No new-version winners yet; diversify hooks and shots, then store user ratings after review."
     parts = []
     if winning_patterns:
         parts.append("Prefer historical winners: " + ", ".join(winning_patterns[:6]))

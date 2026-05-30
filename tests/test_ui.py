@@ -110,9 +110,12 @@ def test_next_orchestrator_surfaces_marketing_skill_stack():
     assert "Static ad concepts" in page_tsx
     assert "Quality gates" in page_tsx
     assert "Old portal fallback is disabled" in page_tsx
+    assert "Clean memory mode" in page_tsx
+    assert "Clean RAG start" in page_tsx
     assert 'body.set("creative_mission_contract_required", "true")' in api_ts
     assert "active_marketing_skill_plan" in types_ts
     assert "marketing_skill_registry" in types_ts
+    assert "memory_epoch" in types_ts
 
 
 def test_react_index_is_default_app_shell():
