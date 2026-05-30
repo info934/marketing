@@ -143,6 +143,11 @@ type ScenarioDraft = {
   cta: string;
   language: string;
   created_at: string;
+  targetAudience?: string;
+  offerFrame?: string;
+  staticConcepts?: string[];
+  qualityGates?: string[];
+  testHypothesis?: string;
 };
 type ChatWorkflowStepState = "done" | "active" | "blocked" | "waiting";
 type ChatWorkflowStep = {
@@ -178,6 +183,7 @@ type MarketingSkillStackData = {
 
 const defaultChatGptPromptModel = "openai/gpt-5.4-mini";
 const previousGeminiScenarioModel = "google/gemini-3.5-flash";
+const approvedCreativeMissionMarker = "APPROVED_CREATIVE_MISSION_CONTRACT_V1";
 
 const defaultForm: CampaignForm = {
   app_mode: "ecommerce",
@@ -1158,13 +1164,13 @@ export default function CreativeOsApp() {
 
     const drafts = buildChatScenarioDrafts(form, activeAvatar);
     const scenarioMessage = createAssistantItem(
-      `Pripravil jsem ${drafts.length} scenare pro UGC. Vyber jednu variantu v agent timeline, po schvaleni se propise do rezie generovani.`,
+      `Pripravil jsem ${drafts.length} creative mission plany pro UGC i staticke reklamy. Vyber jednu variantu; bez schvaleneho contractu provider nedostane zadny prompt.`,
     );
     setScenarioDrafts(drafts);
     setApprovedScenarioId("");
     setScenarioMessageId(scenarioMessage.id);
     setItems((current) => [...current, scenarioMessage]);
-    setStatus("Scenare pripraveny ke schvaleni.");
+    setStatus("Creative mission plany jsou pripravene ke schvaleni.");
   };
 
   const approveScenario = (draftId: string) => {
@@ -1173,13 +1179,13 @@ export default function CreativeOsApp() {
     setApprovedScenarioId(draftToApprove.id);
     setForm((current) => ({
       ...current,
-      ugc_video_extra_prompt: upsertApprovedScenarioPrompt(current.ugc_video_extra_prompt, draftToApprove),
+      ugc_video_extra_prompt: upsertApprovedScenarioPrompt(current.ugc_video_extra_prompt, draftToApprove, current, activeAvatar),
     }));
     setItems((current) => [
       ...current,
-      createAssistantItem(`Schvaleno: ${draftToApprove.title}. Tento scenar je zapsany do rezie a pujde do dalsiho generation runu.`),
+      createAssistantItem(`Schvaleno: ${draftToApprove.title}. Vznikl ${approvedCreativeMissionMarker}; generate gate ted smi poslat do backendu jen tenhle plan.`),
     ]);
-    setStatus("Scenar schvalen. Ted muzes dat Generate v orchestratoru.");
+    setStatus("Creative mission contract schvalen. Ted muzes dat Generate v orchestratoru.");
   };
 
   const generate = async () => {
@@ -1188,8 +1194,8 @@ export default function CreativeOsApp() {
       selectView("chat");
       return;
     }
-    if (!approvedScenarioId && !form.ugc_video_extra_prompt.trim()) {
-      setStatus("Nejdriv priprav a schval Creative Plan. Spoustim navrh scenaru.");
+    if (!hasApprovedCreativePlan(form, scenarioDrafts, approvedScenarioId)) {
+      setStatus("Nejdriv priprav a schval Creative Mission Contract. Volna rezie uz se do generatoru neposila.");
       createScenarioDrafts();
       return;
     }
@@ -1496,11 +1502,11 @@ export default function CreativeOsApp() {
   const activePhase = orchestrator?.phases.find((phase) => phase.id === orchestrator.current_phase);
   const activePhaseLabel = activePhase?.title || "Brief";
   const activeRunId = String(latestRun?.run_id || "");
-  const chatHasApprovedPlan = Boolean(approvedScenarioId && scenarioDrafts.some((scenario) => scenario.id === approvedScenarioId));
+  const chatHasApprovedPlan = hasApprovedCreativePlan(form, scenarioDrafts, approvedScenarioId);
   const chatVideoReferenceRisk = form.generation_mode !== "static" && !isVideoReadyProductReference(form.product_reference_url);
   const headerGenerateDisabled = busy || (view === "chat" && (!chatHasApprovedPlan || chatVideoReferenceRisk));
   const headerGenerateLabel =
-    view !== "chat" ? "Generate" : !chatHasApprovedPlan ? "Approve plan first" : chatVideoReferenceRisk ? "Add video reference" : "Generate";
+    view !== "chat" ? "Generate" : !chatHasApprovedPlan ? "Approve mission first" : chatVideoReferenceRisk ? "Add video reference" : "Generate";
 
   return (
     <main className="h-dvh overflow-hidden bg-[#eef1f4] text-foreground">
@@ -1840,7 +1846,7 @@ function AgentCockpit(props: {
   const hasBrief = Boolean(props.form.product_info || props.form.product_reference_url || props.productFile || props.staticProductFiles.length);
   const hasBrand = Boolean(props.form.company_id || props.form.brand_context);
   const hasReference = props.form.generation_mode === "static" || isVideoReadyProductReference(props.form.product_reference_url);
-  const hasApprovedScenario = Boolean(props.approvedScenarioId || props.form.ugc_video_extra_prompt.trim());
+  const hasApprovedScenario = hasApprovedCreativePlan(props.form, props.scenarioDrafts, props.approvedScenarioId);
   const statusLabel = props.busy ? "Working" : hasApprovedScenario ? "Ready" : props.scenarioDrafts.length ? "Review" : hasBrief ? "Planning" : "Listening";
   const mission = props.form.product_name || firstLine(props.form.product_info) || "New ads mission";
   const activeOrchestrator = isActionableOrchestrator(props.orchestrator) ? props.orchestrator : null;
@@ -2235,7 +2241,7 @@ function ChatWorkspace(props: {
   );
   const missionTitle = props.form.product_name || firstLine(props.form.product_info) || "New creative mission";
   const approvedScenario = props.scenarioDrafts.find((scenario) => scenario.id === props.approvedScenarioId);
-  const hasApprovedPlan = Boolean(approvedScenario);
+  const hasApprovedPlan = hasApprovedCreativePlan(props.form, props.scenarioDrafts, props.approvedScenarioId);
   const hasManualDirection = Boolean(props.form.ugc_video_extra_prompt.trim());
   const hasBrief = Boolean(props.form.product_info || props.form.product_reference_url || props.productFile || props.staticProductFiles.length);
   const videoMode = props.form.generation_mode !== "static";
@@ -2247,7 +2253,7 @@ function ChatWorkspace(props: {
   const activeWorkflowStep = workflowSteps.find((step) => step.state === "active" || step.state === "blocked");
   const nextAction = props.orchestrator?.next_action || activeWorkflowStep?.detail || props.status;
   const gateLabel = hasVideoRisk ? "needs visual URL" : hasApprovedPlan ? "ready" : props.scenarioDrafts.length ? "approve plan" : "draft plan";
-  const generateButtonLabel = props.busy ? "Generating" : !hasApprovedPlan ? "Approve plan first" : hasVideoRisk ? "Add video reference" : "Generate approved ads";
+  const generateButtonLabel = props.busy ? "Generating" : !hasApprovedPlan ? "Approve mission first" : hasVideoRisk ? "Add video reference" : "Generate approved ads";
   const briefPreview = props.form.product_info.trim();
   const directionPreview = props.form.ugc_video_extra_prompt.trim();
   const referencePreview = props.form.product_reference_url.trim() || (referenceCount ? `${referenceCount} uploaded asset${referenceCount === 1 ? "" : "s"}` : "");
@@ -2317,7 +2323,7 @@ function ChatWorkspace(props: {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant={hasBrief ? "secondary" : "outline"}>{hasBrief ? "brief ready" : "brief empty"}</Badge>
-                    <Badge variant={hasManualDirection ? "secondary" : "outline"}>{hasManualDirection ? "direction set" : "agent decides angle"}</Badge>
+                    <Badge variant={hasApprovedPlan ? "secondary" : "outline"}>{hasApprovedPlan ? "contract locked" : hasManualDirection ? "direction note only" : "agent decides angle"}</Badge>
                   </div>
                 </div>
 
@@ -2463,7 +2469,7 @@ function ChatWorkspace(props: {
                       </div>
                     </details>
                     <div className="flex flex-wrap gap-2 text-[11px]">
-                      <Badge variant={hasApprovedPlan ? "secondary" : "outline"}>{hasApprovedPlan ? "approved plan" : "needs approval"}</Badge>
+                      <Badge variant={hasApprovedPlan ? "secondary" : "outline"}>{hasApprovedPlan ? "approved contract" : "needs approval"}</Badge>
                       <Badge variant="outline">{modeLabel(props.form.generation_mode)}</Badge>
                       <Badge variant="outline">{props.form.market || "UK"} / {props.form.language || "en"}</Badge>
                     </div>
@@ -2758,7 +2764,8 @@ function ChatWorkspace(props: {
               </div>
               <div className="grid gap-2 text-xs text-muted-foreground">
                 <SignalRow label="Scenario" value={approvedScenario?.title || (props.scenarioDrafts.length ? "Needs approval" : "No draft")} />
-                <SignalRow label="Direction" value={hasManualDirection ? "Provided" : "Empty"} />
+                <SignalRow label="Contract" value={hasApprovedPlan ? approvedCreativeMissionMarker : "Not approved"} />
+                <SignalRow label="Direction" value={hasManualDirection ? (hasApprovedPlan ? "Approved" : "Note only") : "Empty"} />
                 <SignalRow label="Video ref" value={hasVideoRisk ? "Needs public image URL" : "OK"} />
                 <SignalRow label="Mode" value={modeLabel(props.form.generation_mode)} />
               </div>
@@ -2937,7 +2944,7 @@ function ChatWorkflowCard(props: {
   compact?: boolean;
 }) {
   const approvedScenario = props.scenarioDrafts.find((scenario) => scenario.id === props.approvedScenarioId);
-  const hasApprovedPlan = Boolean(approvedScenario || props.form.ugc_video_extra_prompt.trim());
+  const hasApprovedPlan = hasApprovedCreativePlan(props.form, props.scenarioDrafts, props.approvedScenarioId);
   const hasScenarioDrafts = props.scenarioDrafts.length > 0;
   const generateDisabled = props.busy || !hasApprovedPlan;
   const outputLabel = modeLabel(props.form.generation_mode);
@@ -2958,7 +2965,7 @@ function ChatWorkflowCard(props: {
           <div className={cn("flex flex-wrap gap-2", props.compact && "w-full")}>
             <Button type="button" variant="secondary" size="sm" className={props.compact ? "flex-1" : undefined} onClick={props.onCreateScenarioDrafts} disabled={props.busy}>
               <FlaskConical className="h-4 w-4" />
-              Scenare
+              Mission
             </Button>
             <Button type="button" size="sm" className={props.compact ? "flex-1" : undefined} onClick={props.onGenerate} disabled={generateDisabled}>
               {props.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
@@ -3016,6 +3023,29 @@ function ChatWorkflowCard(props: {
                       </div>
                     </div>
                     <p className={cn("mt-3 whitespace-pre-wrap rounded-md border bg-slate-50 px-3 py-2 text-sm leading-6", props.compact && "max-h-40 overflow-y-auto")}>{scenario.script}</p>
+                    <div className="mt-3 grid gap-2 text-xs leading-5 md:grid-cols-2">
+                      <div className="rounded-md border bg-white px-3 py-2">
+                        <p className="font-semibold text-slate-700">Static ad concepts</p>
+                        <ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground">
+                          {(scenario.staticConcepts || []).slice(0, 4).map((item) => (
+                            <li key={`${scenario.id}-${item}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="rounded-md border bg-white px-3 py-2">
+                        <p className="font-semibold text-slate-700">Quality gates</p>
+                        <ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground">
+                          {(scenario.qualityGates || []).slice(0, 4).map((item) => (
+                            <li key={`${scenario.id}-${item}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    {!!scenario.testHypothesis && (
+                      <p className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-950">
+                        {scenario.testHypothesis}
+                      </p>
+                    )}
                     <div className="mt-3 flex flex-wrap gap-2">
                       {scenario.visualPlan.map((item) => (
                         <Badge key={`${scenario.id}-${item}`} variant="outline">
@@ -3100,6 +3130,29 @@ function ChatScenarioApprovalCard(props: {
                   </div>
                 </div>
                 <p className="mt-3 whitespace-pre-wrap rounded-md border bg-slate-50 px-3 py-2 text-sm leading-6">{scenario.script}</p>
+                <div className="mt-3 grid gap-2 text-xs leading-5 md:grid-cols-2">
+                  <div className="rounded-md border bg-white px-3 py-2">
+                    <p className="font-semibold text-slate-700">Static ad concepts</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground">
+                      {(scenario.staticConcepts || []).slice(0, 4).map((item) => (
+                        <li key={`${scenario.id}-${item}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="rounded-md border bg-white px-3 py-2">
+                    <p className="font-semibold text-slate-700">Quality gates</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground">
+                      {(scenario.qualityGates || []).slice(0, 4).map((item) => (
+                        <li key={`${scenario.id}-${item}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+                {!!scenario.testHypothesis && (
+                  <p className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-950">
+                    {scenario.testHypothesis}
+                  </p>
+                )}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {scenario.visualPlan.map((item) => (
                     <Badge key={`${scenario.id}-${item}`} variant="outline">
@@ -6256,6 +6309,16 @@ function modeLabel(mode: string) {
   return "Video + statiky";
 }
 
+function hasApprovedCreativePlan(form: CampaignForm, scenarioDrafts: ScenarioDraft[], approvedScenarioId: string) {
+  const approvedScenario = scenarioDrafts.some((scenario) => scenario.id === approvedScenarioId);
+  return approvedScenario && approvedCreativeMissionContractPresent(form.ugc_video_extra_prompt);
+}
+
+function approvedCreativeMissionContractPresent(value: string) {
+  const text = String(value || "");
+  return text.includes(approvedCreativeMissionMarker) && text.includes("=== CHAT APPROVED SCENARIO START ===");
+}
+
 function generationEstimateText(form: CampaignForm) {
   const videoLength = Number(form.video_length) || 15;
   const staticCount = Number(form.max_static_images) || 0;
@@ -6276,8 +6339,7 @@ function chatWorkflowSteps(
   const videoMode = form.generation_mode !== "static";
   const productReferenceReady = !videoMode || isVideoReadyProductReference(form.product_reference_url);
   const hasScenarioDrafts = scenarioDrafts.length > 0;
-  const hasApprovedScenario = Boolean(approvedScenarioId && scenarioDrafts.some((scenario) => scenario.id === approvedScenarioId));
-  const hasApprovedPlan = Boolean(hasApprovedScenario || form.ugc_video_extra_prompt.trim());
+  const hasApprovedPlan = hasApprovedCreativePlan(form, scenarioDrafts, approvedScenarioId);
   const readyToGenerate = hasProduct && productReferenceReady && form.avatar_own_person_consent && hasApprovedPlan;
 
   return [
@@ -6298,14 +6360,14 @@ function chatWorkflowSteps(
     {
       id: "plan",
       title: "Creative Plan",
-      detail: hasApprovedPlan ? "Creative plan je propsany do rezie." : hasScenarioDrafts ? "Vyber jednu variantu." : "Priprav UGC scenare a staticke koncepty.",
+      detail: hasApprovedPlan ? "Creative mission contract je schvaleny a zamceny." : hasScenarioDrafts ? "Vyber jednu variantu." : "Priprav UGC scenare a staticke koncepty.",
       state: hasApprovedPlan ? "done" : hasScenarioDrafts ? "active" : hasProduct ? "waiting" : "waiting",
       meta: hasScenarioDrafts ? `${scenarioDrafts.length} varianty` : "UGC + static",
     },
     {
       id: "generate",
       title: "Generate",
-      detail: readyToGenerate ? "Pripraveno spustit generation run." : productReferenceReady ? "Ceka na schvaleny plan." : "Video potrebuje public direct visual URL.",
+      detail: readyToGenerate ? "Pripraveno spustit generation run." : productReferenceReady ? "Ceka na schvaleny creative mission contract." : "Video potrebuje public direct visual URL.",
       state: readyToGenerate ? "active" : productReferenceReady ? "waiting" : hasProduct ? "blocked" : "waiting",
       meta: modeLabel(form.generation_mode),
     },
@@ -6338,7 +6400,7 @@ function buildChatScenarioDrafts(form: CampaignForm, avatar: Avatar | undefined)
     : [];
 
   if (language === "de") {
-    return [
+    return finalizeScenarioDrafts([
       ...apparelSuggestions,
       {
         id: `scenario-${baseId}-daily`,
@@ -6373,11 +6435,11 @@ function buildChatScenarioDrafts(form: CampaignForm, avatar: Avatar | undefined)
         language: "de",
         created_at: createdAt,
       },
-    ];
+    ], form, avatar);
   }
 
   if (language === "en") {
-    return [
+    return finalizeScenarioDrafts([
       ...apparelSuggestions,
       {
         id: `scenario-${baseId}-daily`,
@@ -6412,10 +6474,10 @@ function buildChatScenarioDrafts(form: CampaignForm, avatar: Avatar | undefined)
         language: "en",
         created_at: createdAt,
       },
-    ];
+    ], form, avatar);
   }
 
-  return [
+  return finalizeScenarioDrafts([
     ...apparelSuggestions,
     {
       id: `scenario-${baseId}-daily`,
@@ -6450,7 +6512,69 @@ function buildChatScenarioDrafts(form: CampaignForm, avatar: Avatar | undefined)
       language: "cs",
       created_at: createdAt,
     },
+  ], form, avatar);
+}
+
+function finalizeScenarioDrafts(drafts: ScenarioDraft[], form: CampaignForm, avatar: Avatar | undefined): ScenarioDraft[] {
+  return drafts.map((draft) => ({
+    ...draft,
+    targetAudience: scenarioTargetAudience(form, avatar),
+    offerFrame: scenarioOfferFrame(form),
+    staticConcepts: scenarioStaticConcepts(form, draft),
+    qualityGates: scenarioQualityGates(form, avatar),
+    testHypothesis: scenarioTestHypothesis(form, draft),
+  }));
+}
+
+function scenarioTargetAudience(form: CampaignForm, avatar: Avatar | undefined) {
+  const market = form.market || "selected market";
+  const platform = form.platform || "paid social";
+  const category = form.product_category && form.product_category !== "auto" ? form.product_category : "offer";
+  const avatarCue = avatar?.name ? `creator ${avatar.name}` : "selected creator avatar";
+  return `${market} ${platform} buyers for ${category}; ${avatarCue} keeps the ad native and human.`;
+}
+
+function scenarioOfferFrame(form: CampaignForm) {
+  const productName = safeScenarioProductName(form);
+  const fact = scenarioProductFact(form.product_info);
+  if (fact) return `${productName}: ${fact}`;
+  return `${productName}: product/service proof must come only from the brief, company profile, and visual reference.`;
+}
+
+function scenarioStaticConcepts(form: CampaignForm, scenario: ScenarioDraft) {
+  const productName = safeScenarioProductName(form);
+  const category = String(form.product_category || "").toLowerCase();
+  const humanContext = category.includes("apparel")
+    ? "on-body fit/context view"
+    : category.includes("handbag") || category.includes("bag")
+    ? "adult body-scale use context"
+    : "real buyer use context";
+  return [
+    `C2 product hero: ${productName} visible first, same reference shape/color/material, hook derived from "${scenario.hook}".`,
+    `C3 use context: ${humanContext}, natural paid-social photo, no stock studio look, product remains the main subject.`,
+    `C4 proof detail: close detail that supports the ad angle without inventing claims, reviews, discounts, or UI buttons.`,
+    `C5 carousel: buying guide sequence with distinct cards; each card has one job and does not duplicate C2/C3/C4.`,
   ];
+}
+
+function scenarioQualityGates(form: CampaignForm, avatar: Avatar | undefined) {
+  const gates = [
+    "No provider call before this mission contract is approved.",
+    "Video and static prompts must preserve product fidelity: material, color, shape, size, proportions, logo, and product type.",
+    "Every asset must map to a marketing job: hook, proof cue, buyer motivation, and test hypothesis.",
+    "No unsupported discounts, fake reviews, fake urgency, platform UI, or unverified performance claims.",
+    "Static concepts must be visually distinct; no filler variants from the old portal flow.",
+  ];
+  if (form.avatar_own_person_consent) gates.push("Avatar usage is explicitly authorized for advertising.");
+  if (avatar?.style || form.custom_avatar_persona) gates.push("Human subjects in statics must respect the selected avatar/persona gender and creator context.");
+  if (form.generation_mode !== "static") gates.push("UGC video must keep the approved spoken hook and scene logic.");
+  if (form.generation_mode !== "video") gates.push("Static images must respect the approved scenario when human context is shown.");
+  return gates;
+}
+
+function scenarioTestHypothesis(form: CampaignForm, scenario: ScenarioDraft) {
+  const platform = form.platform || "paid social";
+  return `Test whether "${scenario.angle}" improves ${platform} thumb-stop and click intent versus generic product-showing ads.`;
 }
 
 function mirrorSelfieTryOnScenario(
@@ -6544,25 +6668,43 @@ function scenarioLanguageCode(language: string) {
   return "cs";
 }
 
-function upsertApprovedScenarioPrompt(current: string, scenario: ScenarioDraft) {
+function upsertApprovedScenarioPrompt(current: string, scenario: ScenarioDraft, form: CampaignForm, avatar: Avatar | undefined) {
   const withoutOld = String(current || "")
     .replace(/\n*=== CHAT APPROVED SCENARIO START ===[\s\S]*?=== CHAT APPROVED SCENARIO END ===\n*/g, "\n")
     .trim();
+  const manualNotes = withoutOld.replace(/\s+/g, " ").trim().slice(0, 1200);
+  const staticConcepts = scenario.staticConcepts?.length ? scenario.staticConcepts : scenarioStaticConcepts(form, scenario);
+  const qualityGates = scenario.qualityGates?.length ? scenario.qualityGates : scenarioQualityGates(form, avatar);
   const block = [
     "=== CHAT APPROVED SCENARIO START ===",
-    `Use this approved orchestrator scenario as optional scene direction layered under the app's UGC skill rules.`,
+    approvedCreativeMissionMarker,
+    "Use this approved orchestrator scenario as a hard creative mission contract layered under the app's UGC, static ad, product fidelity, and provider validation rules.",
+    "If any final provider prompt drifts from this contract, block_generation before video or image provider calls.",
+    `Approved scenario id: ${scenario.id}`,
+    `Output mode: ${modeLabel(form.generation_mode)}`,
+    `Platform: ${form.platform || "paid social"}`,
+    `Market: ${form.market || "selected market"}`,
     `Language: ${scenario.language}`,
+    `Avatar: ${avatar?.name || form.custom_avatar_name || form.avatar_id || "selected avatar"}`,
+    `Target audience: ${scenario.targetAudience || scenarioTargetAudience(form, avatar)}`,
+    `Offer frame: ${scenario.offerFrame || scenarioOfferFrame(form)}`,
+    manualNotes ? `Additional user direction notes folded into this approved contract: ${manualNotes}` : "",
     `Title: ${scenario.title}`,
     `Angle: ${scenario.angle}`,
     `Spoken hook: ${scenario.hook}`,
     `Script: ${scenario.script}`,
     `Visual plan: ${scenario.visualPlan.join(" -> ")}`,
+    `Static ad concepts: ${staticConcepts.join(" | ")}`,
+    `Quality gates: ${qualityGates.join(" | ")}`,
+    `Test hypothesis: ${scenario.testHypothesis || scenarioTestHypothesis(form, scenario)}`,
     `CTA: ${scenario.cta}`,
     "Keep the exact product appearance from the product reference. Do not change material, shape, size, color, transparency, proportions, logo, or product type.",
     "Keep the avatar visible in the hook and closing scene. Do not render generated on-screen text; spoken audio carries the hook and message.",
+    "Static images must respect the selected avatar/persona gender whenever a human subject is shown.",
+    "Old portal fallback is disabled: do not generate from unapproved freeform direction or generic filler variants.",
     "=== CHAT APPROVED SCENARIO END ===",
-  ].join("\n");
-  return appendBlock(withoutOld, block);
+  ].filter(Boolean).join("\n");
+  return block;
 }
 
 function generationRunProblem(run: Record<string, unknown> | null): { message: string } | null {

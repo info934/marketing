@@ -86,8 +86,41 @@ app.mount("/output", StaticFiles(directory=config.OUTPUT_DIR, check_dir=False), 
 app.mount("/static", StaticFiles(directory=Path("app/static"), check_dir=False), name="static")
 _generation_lock = threading.Lock()
 _generation_submission_lock = threading.Lock()
+APPROVED_CREATIVE_MISSION_MARKER = "APPROVED_CREATIVE_MISSION_CONTRACT_V1"
 PRODUCT_UNDERSTANDING_TIMEOUT_SECONDS = 85
 VISUAL_PRODUCT_CLASSIFIER_TIMEOUT_SECONDS = 115
+
+
+def _approved_creative_mission_contract_present(value: str) -> bool:
+    text = str(value or "")
+    return (
+        APPROVED_CREATIVE_MISSION_MARKER in text
+        and "=== CHAT APPROVED SCENARIO START ===" in text
+        and "=== CHAT APPROVED SCENARIO END ===" in text
+    )
+
+
+def _requires_creative_mission_contract(form: Any, idempotency_key: str) -> bool:
+    source = _form_str(form, "portal_generation_source").strip()
+    return (
+        _form_bool(form, "creative_mission_contract_required", False)
+        or source == "orchestrator_agent_v2"
+        or str(idempotency_key or "").startswith("next-chat-")
+    )
+
+
+def _creative_mission_contract_block_response() -> JSONResponse:
+    return JSONResponse(
+        content={
+            "status": "blocked",
+            "error": "Creative Mission Contract must be approved before generation.",
+            "reason": "The orchestrator portal no longer sends freeform or old-portal direction directly to video/image providers.",
+            "next_step": "Create a mission in the chat, approve one scenario, then start generation again.",
+            "provider_calls_started": False,
+            "contract_marker": APPROVED_CREATIVE_MISSION_MARKER,
+        },
+        status_code=400,
+    )
 
 
 @app.middleware("http")
@@ -612,6 +645,15 @@ async def create_generation_run(request: Request) -> JSONResponse:
                     status_code=400,
                 )
             idempotency_key = _form_str(form, "idempotency_key") or _generated_idempotency_key(workspace)
+            if (
+                workspace == "ecommerce"
+                and _requires_creative_mission_contract(form, idempotency_key)
+                and not _approved_creative_mission_contract_present(_form_str(form, "ugc_video_extra_prompt"))
+            ):
+                _cleanup_staged_upload(staged_upload)
+                _cleanup_staged_upload(staged_static_product_images)
+                _cleanup_staged_upload(staged_competitor_screenshots)
+                return _creative_mission_contract_block_response()
             generation_run = generation_run_repository.create_run(
                 workspace=workspace,
                 app_mode="finance_personal_brand" if workspace == "finance" else "ecommerce",

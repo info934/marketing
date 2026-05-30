@@ -39,6 +39,8 @@ export async function startGeneration(form: CampaignForm, productFile: File | nu
   Object.entries(form).forEach(([key, value]) => {
     body.set(key, typeof value === "boolean" ? String(value) : String(value ?? ""));
   });
+  body.set("portal_generation_source", "orchestrator_agent_v2");
+  body.set("creative_mission_contract_required", "true");
   body.set("generate_static_images", "true");
   body.set("testimonial_mode", "false");
   body.set("idempotency_key", `next-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);

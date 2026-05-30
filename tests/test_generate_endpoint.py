@@ -979,6 +979,34 @@ def test_generation_runs_post_executes_compatible_workflow(monkeypatch, tmp_path
     assert run["session_cost_summary"]
 
 
+def test_next_portal_generation_requires_approved_creative_mission(monkeypatch, tmp_path):
+    _configure_tmp_dirs(monkeypatch, tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/generation-runs",
+        data={
+            "product_name": "Run Tote",
+            "product_info": "Minimal bag with clean shape",
+            "product_reference_url": "https://example.com/run-tote.jpg",
+            "platform": "meta",
+            "language": "en",
+            "idempotency_key": "next-chat-unapproved",
+            "portal_generation_source": "orchestrator_agent_v2",
+            "creative_mission_contract_required": "true",
+            "ugc_video_extra_prompt": "Old freeform direction from the legacy portal.",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["status"] == "blocked"
+    assert payload["provider_calls_started"] is False
+    assert payload["contract_marker"] == "APPROVED_CREATIVE_MISSION_CONTRACT_V1"
+    assert "freeform" in payload["reason"]
+    assert generation_run_repository.list_runs(workspace="ecommerce") == []
+
+
 def test_chat_brief_parser_endpoint_returns_deterministic_draft_without_key(monkeypatch, tmp_path):
     _configure_tmp_dirs(monkeypatch, tmp_path)
     monkeypatch.setattr(config, "OPENROUTER_API_KEY", "")

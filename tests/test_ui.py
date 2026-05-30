@@ -100,10 +100,17 @@ def test_react_new_campaign_simple_chat_mode_is_available():
 def test_next_orchestrator_surfaces_marketing_skill_stack():
     page_tsx = Path("frontend/app/page.tsx").read_text(encoding="utf-8")
     types_ts = Path("frontend/lib/types.ts").read_text(encoding="utf-8")
+    api_ts = Path("frontend/lib/api.ts").read_text(encoding="utf-8")
 
     assert "MarketingSkillStackCard" in page_tsx
     assert "marketingSkillStackData" in page_tsx
     assert "Plan gate" in page_tsx
+    assert "APPROVED_CREATIVE_MISSION_CONTRACT_V1" in page_tsx
+    assert "hasApprovedCreativePlan" in page_tsx
+    assert "Static ad concepts" in page_tsx
+    assert "Quality gates" in page_tsx
+    assert "Old portal fallback is disabled" in page_tsx
+    assert 'body.set("creative_mission_contract_required", "true")' in api_ts
     assert "active_marketing_skill_plan" in types_ts
     assert "marketing_skill_registry" in types_ts
 
